@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { Check, Download, MessageCircle, Mic, Paperclip, Phone, Play, Smile, UserRound, Volume2 } from 'lucide-react'
+import { useRef, useState, type ChangeEvent } from 'react'
+import { Check, Download, MessageCircle, Mic, Paperclip, Phone, Play, Send, Smile, UserRound, Volume2, X } from 'lucide-react'
 
 const messages = [
   { id: 'links', type: 'text', content: (<div className="space-y-5"><a href="https://777.us" className="chat-link">https://777.us</a><a href="https://Cricxbet99.xyz" className="chat-link">https://Cricxbet99.xyz</a><a href="https://9wicket.com" className="chat-link">https://9wicket.com</a><a href="https://gold.365.run" className="chat-link">https://gold.365.run</a><p className="pt-1">(FOR DEMO Id - Just click on LOGIN WITH DEMO on our sites)<span aria-hidden="true">👍</span></p><p>♆ Profit Online HUB ♆<br />╰┈➤ 🙏 <strong>HAPPY GAMING</strong> 🙏 ╰┈➤</p><p>🚦FAST WITHDRAWALWITH IN 10 MINUTES 🚦</p></div>), timestamp: '12:03' },
@@ -30,8 +30,15 @@ function MessageBubble({ message }: { message: (typeof messages)[number] }) {
 function Composer() {
   const [draft, setDraft] = useState('')
   const [sent, setSent] = useState<string[]>([])
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const sendMessage = () => { if (draft.trim()) { setSent((items) => [...items, draft.trim()]); setDraft('') } }
-  return <><div className="quick-replies" aria-label="Quick replies"><button onClick={() => setDraft('I Need ID.')}>🤖 🆔 I Need ID.</button><button onClick={() => setDraft('I Need Support')}>🤖 💬 I Need Support</button></div>{sent.length > 0 && <div className="sent-preview">{sent.map((item, index) => <span key={`${item}-${index}`}>{item}</span>)}</div>}<form className="composer" onSubmit={(event) => { event.preventDefault(); sendMessage() }}><button type="button" aria-label="Add emoji" className="composer-icon"><Smile size={26} /></button><button type="button" aria-label="Attach file" className="composer-icon"><Paperclip size={25} /></button><input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="Type a message..." aria-label="Message" /><button type="button" aria-label="Record voice message" className="mic-button"><Mic size={24} /></button></form></>
+  const addEmoji = (emoji: string) => setDraft((current) => `${current}${emoji}`)
+  const handleFile = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (file) setDraft((current) => current || `Attached: ${file.name}`)
+  }
+  return <><div className="quick-replies" aria-label="Quick replies"><button onClick={() => setDraft('I Need ID.')}>🤖 🆔 I Need ID.</button><button onClick={() => setDraft('I Need Support')}>🤖 💬 I Need Support</button></div>{sent.length > 0 && <div className="sent-preview">{sent.map((item, index) => <span key={`${item}-${index}`}>{item}</span>)}</div>}<form className="composer" onSubmit={(event) => { event.preventDefault(); sendMessage() }}><div className="composer-tool-wrap"><button type="button" aria-label="Add emoji" className="composer-icon" onClick={() => setShowEmojiPicker((value) => !value)}><Smile size={22} /></button>{showEmojiPicker && <div className="emoji-picker" role="dialog" aria-label="Emoji picker"><div className="emoji-picker-header"><span>Choose an emoji</span><button type="button" aria-label="Close emoji picker" onClick={() => setShowEmojiPicker(false)}><X size={14} /></button></div><div className="emoji-grid">{['🙂', '😀', '😂', '😍', '👍', '🙏', '🎉', '❤️', '🔥', '💬', '✅', '🤖'].map((emoji) => <button type="button" key={emoji} onClick={() => { addEmoji(emoji); setShowEmojiPicker(false) }}>{emoji}</button>)}</div></div>}</div><button type="button" aria-label="Attach image or file" className="composer-icon" onClick={() => fileInputRef.current?.click()}><Paperclip size={22} /></button><input ref={fileInputRef} className="file-input" type="file" accept="image/*,.pdf,.doc,.docx,.txt" onChange={handleFile} /><input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="Type a message..." aria-label="Message" /><button type="submit" aria-label="Send message" className={`send-button ${draft.trim() ? 'send-button-visible' : ''}`}><Send size={20} /></button><button type="button" aria-label="Record voice message" className="mic-button"><Mic size={21} /></button></form></>
 }
 
 export default function ChatInterface() {
