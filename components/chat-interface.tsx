@@ -24,7 +24,6 @@ import { Avatar, MessageBubble } from '@/components/message-bubble'
 import {
   type ChatMessage,
   type Conversation,
-  type MessageStatus,
   formatTime,
 } from '@/lib/chat-messages'
 import {
@@ -34,6 +33,7 @@ import {
   updateCustomerName,
   type CustomerIdentity,
 } from '@/lib/customer-identity'
+import { uploadChatFile } from '@/lib/upload-client'
 
 const EMOJIS = ['🙂', '😀', '😂', '😍', '👍', '🙏', '🎉', '❤️', '🔥', '💬', '✅', '🤖']
 const QUICK_REPLIES = [
@@ -389,17 +389,19 @@ function Composer({
       return
     }
 
-    void blobToDataUrl(file)
-      .then((fileUrl) => {
+    void uploadChatFile(file)
+      .then((uploaded) => {
         onSend({
-          fileName: file.name,
-          fileUrl,
-          mimeType: file.type || 'application/octet-stream',
-          text: file.name,
+          fileName: uploaded.fileName,
+          fileUrl: uploaded.fileUrl,
+          mimeType: uploaded.mimeType,
+          text: uploaded.fileName,
         })
       })
-      .catch(() => {
-        setAttachError('Could not read that file. Try another file.')
+      .catch((error: unknown) => {
+        setAttachError(
+          error instanceof Error ? error.message : 'Could not upload that file. Try another file.',
+        )
       })
   }
 
@@ -514,7 +516,10 @@ function Composer({
               <button
                 type="button"
                 role="menuitem"
-                onClick={() => imageInputRef.current?.click()}
+                onClick={() => {
+                  setShowAttachMenu(false)
+                  imageInputRef.current?.click()
+                }}
               >
                 <ImageIcon size={18} />
                 <span>Photo</span>
@@ -522,7 +527,10 @@ function Composer({
               <button
                 type="button"
                 role="menuitem"
-                onClick={() => documentInputRef.current?.click()}
+                onClick={() => {
+                  setShowAttachMenu(false)
+                  documentInputRef.current?.click()
+                }}
               >
                 <FileText size={18} />
                 <span>File</span>
@@ -708,11 +716,7 @@ export default function ChatInterface() {
       setMessages(conversation.messages)
       setSyncError('')
     } catch {
-      setMessages((items) =>
-        items.map((item) =>
-          item.id === id ? { ...item, status: 'sent' as MessageStatus } : item,
-        ),
-      )
+      setMessages((items) => items.filter((item) => item.id !== id))
       setSyncError('Message may not have reached admin. Check your connection.')
     }
   }

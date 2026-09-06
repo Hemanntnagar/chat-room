@@ -34,6 +34,7 @@ import {
   isAdminAuthenticated,
   setAdminAuthenticated,
 } from '@/lib/chat-messages'
+import { uploadChatFile } from '@/lib/upload-client'
 
 const POLL_MS = 2000
 const EMOJIS = ['🙂', '😀', '😂', '😍', '👍', '🙏', '🎉', '❤️', '🔥', '💬', '✅', '🤖']
@@ -266,17 +267,19 @@ function AdminComposer({ onSend }: { onSend: (payload: AdminSendPayload) => void
       return
     }
 
-    void blobToDataUrl(file)
-      .then((fileUrl) => {
+    void uploadChatFile(file)
+      .then((uploaded) => {
         onSend({
-          fileName: file.name,
-          fileUrl,
-          mimeType: file.type || 'application/octet-stream',
-          text: file.name,
+          fileName: uploaded.fileName,
+          fileUrl: uploaded.fileUrl,
+          mimeType: uploaded.mimeType,
+          text: uploaded.fileName,
         })
       })
-      .catch(() => {
-        setAttachError('Could not read that file. Try another file.')
+      .catch((error: unknown) => {
+        setAttachError(
+          error instanceof Error ? error.message : 'Could not upload that file. Try another file.',
+        )
       })
   }
 
@@ -377,7 +380,10 @@ function AdminComposer({ onSend }: { onSend: (payload: AdminSendPayload) => void
               <button
                 type="button"
                 role="menuitem"
-                onClick={() => imageInputRef.current?.click()}
+                onClick={() => {
+                  setShowAttachMenu(false)
+                  imageInputRef.current?.click()
+                }}
               >
                 <ImageIcon size={18} />
                 <span>Photo</span>
@@ -385,7 +391,10 @@ function AdminComposer({ onSend }: { onSend: (payload: AdminSendPayload) => void
               <button
                 type="button"
                 role="menuitem"
-                onClick={() => documentInputRef.current?.click()}
+                onClick={() => {
+                  setShowAttachMenu(false)
+                  documentInputRef.current?.click()
+                }}
               >
                 <FileText size={18} />
                 <span>File</span>
@@ -566,6 +575,7 @@ export default function AdminDashboard() {
       customerId: active.customerId,
     }
 
+    const previous = active
     setActive({
       ...active,
       messages: [...active.messages, message],
@@ -589,6 +599,7 @@ export default function AdminDashboard() {
       await loadList()
       setError('')
     } catch {
+      setActive(previous)
       setError('Reply failed to send. Try again.')
     }
   }
