@@ -6,6 +6,8 @@ import {
   useRef,
   useState,
   type ChangeEvent,
+  type CSSProperties,
+  type TouchEvent as ReactTouchEvent,
 } from 'react'
 import {
   ArrowLeft,
@@ -415,6 +417,10 @@ function formatRelative(updatedAt: number) {
 }
 
 const MOBILE_INBOX_MQ = '(max-width: 860px)'
+const SWIPE_BACK_RATIO = 0.28
+const SWIPE_BACK_PX = 72
+const SWIPE_BACK_VELOCITY = 0.45
+const PANEL_EXIT_MS = 280
 
 export default function AdminDashboard() {
   const [authed, setAuthed] = useState(false)
@@ -424,8 +430,23 @@ export default function AdminDashboard() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [active, setActive] = useState<Conversation | null>(null)
   const [error, setError] = useState('')
+  const [swipeX, setSwipeX] = useState(0)
+  const [isDragging, setIsDragging] = useState(false)
+  const [panelExiting, setPanelExiting] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const threadRef = useRef<HTMLDivElement>(null)
   const selectedIdRef = useRef<string | null>(null)
+  const exitTimerRef = useRef<number | null>(null)
+  const swipeXRef = useRef(0)
+  const touchRef = useRef({
+    startX: 0,
+    startY: 0,
+    lastX: 0,
+    lastTime: 0,
+    velocity: 0,
+    tracking: false,
+    locked: false as false | 'h' | 'v',
+  })
 
   useEffect(() => {
     selectedIdRef.current = selectedId
@@ -438,6 +459,56 @@ export default function AdminDashboard() {
     media.addEventListener('change', sync)
     return () => media.removeEventListener('change', sync)
   }, [])
+
+  useEffect(() => {
+    return () => {
+      if (exitTimerRef.current !== null) {
+        window.clearTimeout(exitTimerRef.current)
+      }
+    }
+  }, [])
+
+  // Non-passive touchmove so horizontal swipe can prevent vertical scroll.
+  useEffect(() => {
+    const node = threadRef.current
+    if (!node || !isMobile || !selectedId) return
+
+    const onMove = (event: TouchEvent) => {
+      const state = touchRef.current
+      if (!state.tracking || panelExiting) return
+
+      const touch = event.touches[0]
+      const dx = touch.clientX - state.startX
+      const dy = touch.clientY - state.startY
+      const now = Date.now()
+      const dt = Math.max(1, now - state.lastTime)
+      state.velocity = (touch.clientX - state.lastX) / dt
+      state.lastX = touch.clientX
+      state.lastTime = now
+
+      if (!state.locked) {
+        if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return
+        state.locked = Math.abs(dx) > Math.abs(dy) ? 'h' : 'v'
+        if (state.locked === 'v') {
+          state.tracking = false
+          swipeXRef.current = 0
+          setIsDragging(false)
+          setSwipeX(0)
+          return
+        }
+        setIsDragging(true)
+      }
+
+      if (state.locked !== 'h') return
+      event.preventDefault()
+      const next = Math.max(0, dx)
+      swipeXRef.current = next
+      setSwipeX(next)
+    }
+
+    node.addEventListener('touchmove', onMove, { passive: false })
+    return () => node.removeEventListener('touchmove', onMove)
+  }, [isMobile, selectedId, panelExiting])
 
   const loadList = async () => {
     const response = await fetch('/api/chats', { cache: 'no-store' })
@@ -464,12 +535,89 @@ export default function AdminDashboard() {
   }
 
   const openConversation = (customerId: string) => {
+    if (exitTimerRef.current !== null) {
+      window.clearTimeout(exitTimerRef.current)
+      exitTimerRef.current = null
+    }
+    setPanelExiting(false)
+    swipeXRef.current = 0
+    setSwipeX(0)
+    setIsDragging(false)
     setSelectedId(customerId)
   }
 
-  const backToList = () => {
+  const finishBackToList = () => {
     setSelectedId(null)
     setActive(null)
+    setPanelExiting(false)
+    swipeXRef.current = 0
+    setSwipeX(0)
+    setIsDragging(false)
+  }
+
+  const backToList = () => {
+    if (!isMobile) {
+      finishBackToList()
+      return
+    }
+    if (panelExiting) return
+    setIsDragging(false)
+    swipeXRef.current = 0
+    setSwipeX(0)
+    setPanelExiting(true)
+    if (exitTimerRef.current !== null) {
+      window.clearTimeout(exitTimerRef.current)
+    }
+    exitTimerRef.current = window.setTimeout(() => {
+      exitTimerRef.current = null
+      finishBackToList()
+    }, PANEL_EXIT_MS)
+  }
+
+  const onThreadTouchStart = (event: ReactTouchEvent<HTMLDivElement>) => {
+    if (!isMobile || panelExiting || !selectedId) return
+    const target = event.target as HTMLElement | null
+    if (target?.closest('input, textarea, button, a, .composer, .emoji-picker')) return
+
+    const touch = event.touches[0]
+    touchRef.current = {
+      startX: touch.clientX,
+      startY: touch.clientY,
+      lastX: touch.clientX,
+      lastTime: Date.now(),
+      velocity: 0,
+      tracking: true,
+      locked: false,
+    }
+  }
+
+  const onThreadTouchEnd = () => {
+    const state = touchRef.current
+    const offset = swipeXRef.current
+    const wasHorizontal = state.locked === 'h' || isDragging
+
+    if (!state.tracking && !wasHorizontal) {
+      touchRef.current.tracking = false
+      touchRef.current.locked = false
+      return
+    }
+
+    const width = typeof window !== 'undefined' ? window.innerWidth : 360
+    const shouldClose =
+      wasHorizontal &&
+      (offset > Math.max(SWIPE_BACK_PX, width * SWIPE_BACK_RATIO) ||
+        (offset > 40 && state.velocity > SWIPE_BACK_VELOCITY))
+
+    touchRef.current.tracking = false
+    touchRef.current.locked = false
+    setIsDragging(false)
+
+    if (shouldClose) {
+      backToList()
+      return
+    }
+    swipeXRef.current = 0
+    setSwipeX(0)
   }
 
   useEffect(() => {
@@ -609,6 +757,14 @@ export default function AdminDashboard() {
   }
 
   const mobileShowingThread = isMobile && Boolean(selectedId)
+  const threadStyle: CSSProperties | undefined =
+    isMobile && mobileShowingThread
+      ? {
+          transform: panelExiting
+            ? 'translate3d(100%, 0, 0)'
+            : `translate3d(${swipeX}px, 0, 0)`,
+        }
+      : undefined
 
   return (
     <main className="admin-inbox-shell">
@@ -694,7 +850,14 @@ export default function AdminDashboard() {
           </Link>
         </aside>
 
-        <div className="admin-thread">
+        <div
+          ref={threadRef}
+          className={`admin-thread${isDragging ? ' admin-thread-dragging' : ''}${panelExiting ? ' admin-thread-exiting' : ''}`}
+          style={threadStyle}
+          onTouchStart={onThreadTouchStart}
+          onTouchEnd={onThreadTouchEnd}
+          onTouchCancel={onThreadTouchEnd}
+        >
           {!active ? (
             <div className="admin-thread-empty">
               <MessageSquare size={36} />
