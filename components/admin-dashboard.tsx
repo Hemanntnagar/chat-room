@@ -414,9 +414,12 @@ function formatRelative(updatedAt: number) {
   return new Date(updatedAt).toLocaleDateString()
 }
 
+const MOBILE_INBOX_MQ = '(max-width: 860px)'
+
 export default function AdminDashboard() {
   const [authed, setAuthed] = useState(false)
   const [ready, setReady] = useState(false)
+  const [isMobile, setIsMobile] = useState(false)
   const [conversations, setConversations] = useState<ConversationSummary[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [active, setActive] = useState<Conversation | null>(null)
@@ -427,6 +430,14 @@ export default function AdminDashboard() {
   useEffect(() => {
     selectedIdRef.current = selectedId
   }, [selectedId])
+
+  useEffect(() => {
+    const media = window.matchMedia(MOBILE_INBOX_MQ)
+    const sync = () => setIsMobile(media.matches)
+    sync()
+    media.addEventListener('change', sync)
+    return () => media.removeEventListener('change', sync)
+  }, [])
 
   const loadList = async () => {
     const response = await fetch('/api/chats', { cache: 'no-store' })
@@ -452,6 +463,15 @@ export default function AdminDashboard() {
     return data.conversation
   }
 
+  const openConversation = (customerId: string) => {
+    setSelectedId(customerId)
+  }
+
+  const backToList = () => {
+    setSelectedId(null)
+    setActive(null)
+  }
+
   useEffect(() => {
     setAuthed(isAdminAuthenticated())
     setReady(true)
@@ -474,7 +494,9 @@ export default function AdminDashboard() {
           return
         }
 
-        if (list.length > 0) {
+        // Desktop: open the first chat. Mobile: stay on the list until tapped.
+        const mobile = window.matchMedia(MOBILE_INBOX_MQ).matches
+        if (!mobile && list.length > 0) {
           setSelectedId(list[0].customerId)
         }
       } catch {
@@ -586,9 +608,14 @@ export default function AdminDashboard() {
     return <AdminLogin onSuccess={() => setAuthed(true)} />
   }
 
+  const mobileShowingThread = isMobile && Boolean(selectedId)
+
   return (
     <main className="admin-inbox-shell">
-      <section className="admin-inbox" aria-label="Admin customer inbox">
+      <section
+        className={`admin-inbox ${isMobile ? (mobileShowingThread ? 'admin-inbox-mobile-thread' : 'admin-inbox-mobile-list') : ''}`}
+        aria-label="Admin customer inbox"
+      >
         <aside className="admin-sidebar">
           <div className="admin-sidebar-header">
             <div>
@@ -638,7 +665,7 @@ export default function AdminDashboard() {
                     type="button"
                     role="listitem"
                     className={`admin-customer-item ${selected ? 'admin-customer-item-active' : ''}`}
-                    onClick={() => setSelectedId(item.customerId)}
+                    onClick={() => openConversation(item.customerId)}
                   >
                     <div className="admin-customer-avatar" aria-hidden="true">
                       {(item.customerName || '?').slice(0, 1).toUpperCase()}
@@ -671,13 +698,27 @@ export default function AdminDashboard() {
           {!active ? (
             <div className="admin-thread-empty">
               <MessageSquare size={36} />
-              <h2>Select a customer</h2>
-              <p>Choose a chat from the left to view messages and reply.</p>
+              <h2>{selectedId ? 'Opening chat…' : 'Select a customer'}</h2>
+              <p>
+                {selectedId
+                  ? 'Loading messages for this customer.'
+                  : 'Choose a chat from the list to view messages and reply.'}
+              </p>
             </div>
           ) : (
             <>
               <div className="chat-header">
                 <div className="header-profile">
+                  {isMobile ? (
+                    <button
+                      type="button"
+                      className="admin-back-button"
+                      aria-label="Back to chats"
+                      onClick={backToList}
+                    >
+                      <ArrowLeft size={22} />
+                    </button>
+                  ) : null}
                   <div className="avatar-wrap">
                     <Avatar />
                     <span className="online-dot" />

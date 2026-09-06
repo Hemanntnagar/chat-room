@@ -1180,6 +1180,24 @@ button { cursor: pointer; }
   font-size: 14px;
 }
 
+.admin-back-button {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  margin-right: 2px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  color: #fff;
+  background: transparent;
+  cursor: pointer;
+}
+
+.admin-back-button:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
 @media (max-width: 860px) {
   .admin-inbox-shell {
     padding: 0;
@@ -1189,11 +1207,38 @@ button { cursor: pointer; }
     width: 100%;
     border-radius: 0;
     grid-template-columns: 1fr;
-    grid-template-rows: 240px minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
   }
 
-  .admin-sidebar {
+  .admin-inbox-mobile-list .admin-sidebar {
+    display: flex;
     border-right: 0;
-    border-bottom: 1px solid #d1d7db;
+    border-bottom: 0;
+  }
+
+  .admin-inbox-mobile-list .admin-thread {
+    display: none;
+  }
+
+  .admin-inbox-mobile-thread .admin-sidebar {
+    display: none;
+  }
+
+  .admin-inbox-mobile-thread .admin-thread {
+    display: flex;
+  }
+
+  .admin-thread .header-profile {
+    min-width: 0;
+  }
+
+  .admin-thread .header-profile h1 {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .admin-chat-actions .save-chat-button span {
+    display: none;
   }
 }
