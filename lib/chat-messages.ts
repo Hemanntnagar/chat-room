@@ -10,6 +10,8 @@ export type ChatMessage = {
   content: string
   text?: string
   fileName?: string
+  fileUrl?: string
+  mimeType?: string
   audioUrl?: string
   durationSec?: number
   timestamp: string

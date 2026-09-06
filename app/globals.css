@@ -453,7 +453,7 @@ button { cursor: pointer; }
 }
 .voice-caption { margin: 8px 0 0 !important; clear: both; }
 
-.file-bubble { min-width: 180px; }
+.file-bubble { min-width: 180px; max-width: min(280px, 78vw); }
 .file-card {
   display: flex;
   align-items: center;
@@ -464,6 +464,37 @@ button { cursor: pointer; }
   background: rgba(0, 0, 0, .04);
   color: #111b21;
   font-weight: 500;
+}
+.file-card-link {
+  text-decoration: none;
+  transition: background .15s ease;
+}
+.file-card-link:hover { background: rgba(0, 0, 0, .07); }
+.file-download-icon {
+  margin-left: auto;
+  color: #667781;
+  flex: 0 0 auto;
+}
+.file-image-link {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+  margin-bottom: 2px;
+}
+.file-image {
+  display: block;
+  width: 100%;
+  max-height: 260px;
+  object-fit: cover;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, .06);
+}
+.file-image-caption {
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+  color: #667781;
+  word-break: break-word;
 }
 
 .quick-replies {

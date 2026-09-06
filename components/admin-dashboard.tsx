@@ -1,16 +1,27 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useRef, useState } from 'react'
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+} from 'react'
 import {
   ArrowLeft,
+  FileText,
+  Image as ImageIcon,
   LogOut,
   MessageSquare,
+  Mic,
+  Paperclip,
   RefreshCw,
   Send,
   Shield,
+  Smile,
   Trash2,
   Users,
+  X,
 } from 'lucide-react'
 import { MessageBubble, Avatar } from '@/components/message-bubble'
 import {
@@ -25,6 +36,41 @@ import {
 } from '@/lib/chat-messages'
 
 const POLL_MS = 2000
+const EMOJIS = ['🙂', '😀', '😂', '😍', '👍', '🙏', '🎉', '❤️', '🔥', '💬', '✅', '🤖']
+const DOCUMENT_ACCEPT =
+  '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.rtf,.zip,.rar,.7z,.json,.xml,.md,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain,*/*'
+
+type AdminSendPayload = {
+  text?: string
+  fileName?: string
+  fileUrl?: string
+  mimeType?: string
+  audioUrl?: string
+  durationSec?: number
+}
+
+const MAX_FILE_BYTES = 8 * 1024 * 1024
+
+function formatDuration(totalSeconds: number) {
+  const safe = Math.max(0, Math.floor(totalSeconds))
+  const minutes = Math.floor(safe / 60)
+  const seconds = safe % 60
+  return `${minutes}:${String(seconds).padStart(2, '0')}`
+}
+
+function pickAudioMimeType() {
+  const types = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg']
+  return types.find((type) => typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(type))
+}
+
+async function blobToDataUrl(blob: Blob) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result))
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(blob)
+  })
+}
 
 function AdminLogin({ onSuccess }: { onSuccess: () => void }) {
   const [password, setPassword] = useState('')
@@ -80,37 +126,319 @@ function AdminLogin({ onSuccess }: { onSuccess: () => void }) {
   )
 }
 
-function AdminComposer({ onSend }: { onSend: (text: string) => void }) {
+function AdminComposer({ onSend }: { onSend: (payload: AdminSendPayload) => void }) {
   const [draft, setDraft] = useState('')
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false)
+  const [showAttachMenu, setShowAttachMenu] = useState(false)
+  const [recording, setRecording] = useState(false)
+  const [recordSeconds, setRecordSeconds] = useState(0)
+  const [recordError, setRecordError] = useState('')
+  const [attachError, setAttachError] = useState('')
+  const imageInputRef = useRef<HTMLInputElement>(null)
+  const documentInputRef = useRef<HTMLInputElement>(null)
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const mediaStreamRef = useRef<MediaStream | null>(null)
+  const chunksRef = useRef<BlobPart[]>([])
+  const startedAtRef = useRef(0)
+  const timerRef = useRef<number | null>(null)
+  const shouldSendRef = useRef(false)
   const hasText = Boolean(draft.trim())
 
+  const clearTimer = () => {
+    if (timerRef.current !== null) {
+      window.clearInterval(timerRef.current)
+      timerRef.current = null
+    }
+  }
+
+  const stopStream = () => {
+    mediaStreamRef.current?.getTracks().forEach((track) => track.stop())
+    mediaStreamRef.current = null
+  }
+
+  const resetRecordingState = () => {
+    clearTimer()
+    setRecording(false)
+    setRecordSeconds(0)
+    mediaRecorderRef.current = null
+    chunksRef.current = []
+    shouldSendRef.current = false
+  }
+
+  useEffect(() => {
+    return () => {
+      clearTimer()
+      if (mediaRecorderRef.current?.state === 'recording') {
+        mediaRecorderRef.current.stop()
+      }
+      stopStream()
+    }
+  }, [])
+
+  const finishRecording = (send: boolean) => {
+    const recorder = mediaRecorderRef.current
+    if (!recorder || recorder.state === 'inactive') {
+      resetRecordingState()
+      stopStream()
+      return
+    }
+    shouldSendRef.current = send
+    recorder.stop()
+  }
+
+  const startRecording = async () => {
+    if (recording) return
+    setRecordError('')
+    setAttachError('')
+    setShowEmojiPicker(false)
+    setShowAttachMenu(false)
+
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      setRecordError('Voice recording is not supported in this browser.')
+      return
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      mediaStreamRef.current = stream
+      const mimeType = pickAudioMimeType()
+      const recorder = mimeType
+        ? new MediaRecorder(stream, { mimeType })
+        : new MediaRecorder(stream)
+
+      chunksRef.current = []
+      mediaRecorderRef.current = recorder
+      startedAtRef.current = Date.now()
+      shouldSendRef.current = false
+
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) chunksRef.current.push(event.data)
+      }
+
+      recorder.onstop = () => {
+        const durationSec = Math.max(1, Math.round((Date.now() - startedAtRef.current) / 1000))
+        const send = shouldSendRef.current
+        const blobType = recorder.mimeType || mimeType || 'audio/webm'
+        const blob = new Blob(chunksRef.current, { type: blobType })
+        stopStream()
+        resetRecordingState()
+
+        if (!send || blob.size === 0) return
+        void blobToDataUrl(blob).then((audioUrl) => {
+          onSend({
+            audioUrl,
+            durationSec,
+            text: 'Voice message',
+          })
+        })
+      }
+
+      recorder.start(250)
+      setRecording(true)
+      setRecordSeconds(0)
+      timerRef.current = window.setInterval(() => {
+        setRecordSeconds(Math.floor((Date.now() - startedAtRef.current) / 1000))
+      }, 250)
+    } catch {
+      stopStream()
+      resetRecordingState()
+      setRecordError('Microphone access is needed to record voice messages.')
+    }
+  }
+
+  const sendMessage = () => {
+    if (recording) return
+    const text = draft.trim()
+    if (!text) return
+    onSend({ text })
+    setDraft('')
+    setShowEmojiPicker(false)
+    setShowAttachMenu(false)
+  }
+
+  const handleFile = (event: ChangeEvent<HTMLInputElement>) => {
+    if (recording) return
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    setShowAttachMenu(false)
+    setAttachError('')
+    if (!file) return
+
+    if (file.size > MAX_FILE_BYTES) {
+      setAttachError('File is too large. Please keep attachments under 8 MB.')
+      return
+    }
+
+    void blobToDataUrl(file)
+      .then((fileUrl) => {
+        onSend({
+          fileName: file.name,
+          fileUrl,
+          mimeType: file.type || 'application/octet-stream',
+          text: file.name,
+        })
+      })
+      .catch(() => {
+        setAttachError('Could not read that file. Try another photo or document.')
+      })
+  }
+
+  if (recording) {
+    return (
+      <div className="composer recording-bar" role="status" aria-live="polite">
+        <button
+          type="button"
+          className="composer-icon record-cancel"
+          aria-label="Cancel recording"
+          onClick={() => finishRecording(false)}
+        >
+          <Trash2 size={22} />
+        </button>
+        <div className="recording-status">
+          <span className="recording-dot" />
+          <span className="recording-timer">{formatDuration(recordSeconds)}</span>
+          <span className="recording-label">Recording… tap send to share</span>
+        </div>
+        <button
+          type="button"
+          aria-label="Send voice message"
+          className="send-button send-button-visible"
+          onClick={() => finishRecording(true)}
+        >
+          <Send size={20} />
+        </button>
+      </div>
+    )
+  }
+
   return (
-    <form
-      className="composer"
-      onSubmit={(event) => {
-        event.preventDefault()
-        const text = draft.trim()
-        if (!text) return
-        onSend(text)
-        setDraft('')
-      }}
-    >
-      <input
-        value={draft}
-        onChange={(event) => setDraft(event.target.value)}
-        placeholder="Reply as Profit Online Hub…"
-        aria-label="Admin reply"
-        autoFocus
-      />
-      <button
-        type="submit"
-        aria-label="Send reply"
-        className={`send-button ${hasText ? 'send-button-visible' : ''}`}
-        disabled={!hasText}
+    <>
+      {recordError ? <p className="record-error">{recordError}</p> : null}
+      {attachError ? <p className="record-error">{attachError}</p> : null}
+      <form
+        className="composer"
+        onSubmit={(event) => {
+          event.preventDefault()
+          sendMessage()
+        }}
       >
-        <Send size={20} />
-      </button>
-    </form>
+        <div className="composer-tool-wrap">
+          <button
+            type="button"
+            aria-label="Add emoji"
+            className="composer-icon"
+            onClick={() => {
+              setShowAttachMenu(false)
+              setShowEmojiPicker((value) => !value)
+            }}
+          >
+            <Smile size={22} />
+          </button>
+          {showEmojiPicker ? (
+            <div className="emoji-picker" role="dialog" aria-label="Emoji picker">
+              <div className="emoji-picker-header">
+                <span>Choose an emoji</span>
+                <button
+                  type="button"
+                  aria-label="Close emoji picker"
+                  onClick={() => setShowEmojiPicker(false)}
+                >
+                  <X size={14} />
+                </button>
+              </div>
+              <div className="emoji-grid">
+                {EMOJIS.map((emoji) => (
+                  <button
+                    type="button"
+                    key={emoji}
+                    onClick={() => {
+                      setDraft((current) => `${current}${emoji}`)
+                      setShowEmojiPicker(false)
+                    }}
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
+        <div className="composer-tool-wrap">
+          <button
+            type="button"
+            aria-label="Attach photo or document"
+            className="composer-icon"
+            onClick={() => {
+              setShowEmojiPicker(false)
+              setShowAttachMenu((value) => !value)
+            }}
+          >
+            <Paperclip size={22} />
+          </button>
+          {showAttachMenu ? (
+            <div className="attach-menu" role="menu" aria-label="Attachment options">
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => imageInputRef.current?.click()}
+              >
+                <ImageIcon size={18} />
+                <span>Photo</span>
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => documentInputRef.current?.click()}
+              >
+                <FileText size={18} />
+                <span>Document</span>
+              </button>
+            </div>
+          ) : null}
+        </div>
+        <input
+          ref={imageInputRef}
+          className="file-input"
+          type="file"
+          accept="image/*"
+          onChange={handleFile}
+        />
+        <input
+          ref={documentInputRef}
+          className="file-input"
+          type="file"
+          accept={DOCUMENT_ACCEPT}
+          onChange={handleFile}
+        />
+        <input
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          placeholder="Reply as Profit Online Hub…"
+          aria-label="Admin reply"
+          autoFocus
+        />
+        {hasText ? (
+          <button
+            type="submit"
+            aria-label="Send reply"
+            className="send-button send-button-visible"
+          >
+            <Send size={20} />
+          </button>
+        ) : (
+          <button
+            type="button"
+            aria-label="Record voice message"
+            className="mic-button"
+            onClick={() => {
+              void startRecording()
+            }}
+          >
+            <Mic size={21} />
+          </button>
+        )}
+      </form>
+    </>
   )
 }
 
@@ -213,16 +541,29 @@ export default function AdminDashboard() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [active?.messages.length, authed, active])
 
-  const handleSend = async (text: string) => {
-    if (!active) return
+  const handleSend = async ({
+    text,
+    fileName,
+    fileUrl,
+    mimeType,
+    audioUrl,
+    durationSec,
+  }: AdminSendPayload) => {
+    if (!active || (!text && !fileName && !audioUrl && !fileUrl)) return
 
+    const type = audioUrl ? 'voice' : fileName || fileUrl ? 'file' : 'text'
     const message: ChatMessage = {
       id: `admin-${Date.now()}`,
       from: 'them',
-      type: 'text',
+      type,
       senderName: HUB_NAME,
-      content: text,
+      content: text ?? fileName ?? 'Voice message',
       text,
+      fileName,
+      fileUrl,
+      mimeType,
+      audioUrl,
+      durationSec,
       timestamp: formatTime(),
       createdAt: Date.now(),
       status: 'sent',
@@ -420,7 +761,7 @@ export default function AdminDashboard() {
                 </div>
               </div>
 
-              <AdminComposer onSend={(text) => void handleSend(text)} />
+              <AdminComposer onSend={(payload) => void handleSend(payload)} />
             </>
           )}
         </div>

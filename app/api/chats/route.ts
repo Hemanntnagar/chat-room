@@ -55,6 +55,8 @@ export async function POST(request: Request) {
     content: content || (message.type === 'voice' ? 'Voice message' : 'Attachment'),
     text: message.text,
     fileName: message.fileName,
+    fileUrl: message.fileUrl,
+    mimeType: message.mimeType,
     audioUrl: message.audioUrl,
     durationSec: message.durationSec,
     timestamp: message.timestamp || formatTime(new Date(now)),

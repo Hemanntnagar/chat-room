@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { Check, CheckCheck, Paperclip, Pause, Play, Volume2 } from 'lucide-react'
+import { Check, CheckCheck, Download, FileText, Paperclip, Pause, Play, Volume2 } from 'lucide-react'
 import {
   type ChatMessage,
   type MessageStatus,
@@ -146,6 +146,56 @@ function VoiceBubble({
   )
 }
 
+function FileAttachment({
+  fileName,
+  fileUrl,
+  mimeType,
+}: {
+  fileName?: string
+  fileUrl?: string
+  mimeType?: string
+}) {
+  const name = fileName ?? 'Attachment'
+  const isImage =
+    Boolean(mimeType?.startsWith('image/')) ||
+    Boolean(fileUrl?.startsWith('data:image/')) ||
+    /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(name)
+
+  if (isImage && fileUrl) {
+    return (
+      <a
+        className="file-image-link"
+        href={fileUrl}
+        download={name}
+        target="_blank"
+        rel="noreferrer"
+        aria-label={`Open photo ${name}`}
+      >
+        {/* Data URLs are stored inline; next/image is not suitable here. */}
+        <img src={fileUrl} alt={name} className="file-image" />
+        <span className="file-image-caption">{name}</span>
+      </a>
+    )
+  }
+
+  if (fileUrl) {
+    return (
+      <a className="file-card file-card-link" href={fileUrl} download={name} target="_blank" rel="noreferrer">
+        <FileText size={18} />
+        <span>{name}</span>
+        <Download size={16} className="file-download-icon" aria-hidden="true" />
+      </a>
+    )
+  }
+
+  return (
+    <div className="file-card">
+      <Paperclip size={18} />
+      <span>{name}</span>
+    </div>
+  )
+}
+
 function PresetBody({ preset }: { preset: NonNullable<ChatMessage['preset']> }) {
   if (preset === 'links') {
     return (
@@ -228,10 +278,11 @@ export function MessageBubble({
             durationSec={message.durationSec}
           />
         ) : message.type === 'file' ? (
-          <div className="file-card">
-            <Paperclip size={18} />
-            <span>{message.fileName ?? 'Attachment'}</span>
-          </div>
+          <FileAttachment
+            fileName={message.fileName}
+            fileUrl={message.fileUrl}
+            mimeType={message.mimeType}
+          />
         ) : (
           <div className="message-body">
             {message.preset ? <PresetBody preset={message.preset} /> : message.content}

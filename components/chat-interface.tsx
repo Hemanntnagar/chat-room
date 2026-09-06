@@ -44,7 +44,8 @@ const QUICK_REPLIES = [
 ]
 const POLL_MS = 2000
 const DOCUMENT_ACCEPT =
-  '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.rtf,.zip,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain'
+  '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.rtf,.zip,.rar,.7z,.json,.xml,.md,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain,*/*'
+const MAX_FILE_BYTES = 8 * 1024 * 1024
 
 function formatDuration(totalSeconds: number) {
   const safe = Math.max(0, Math.floor(totalSeconds))
@@ -241,6 +242,8 @@ function Composer({
   onSend: (payload: {
     text?: string
     fileName?: string
+    fileUrl?: string
+    mimeType?: string
     audioUrl?: string
     durationSec?: number
   }) => void
@@ -251,6 +254,7 @@ function Composer({
   const [recording, setRecording] = useState(false)
   const [recordSeconds, setRecordSeconds] = useState(0)
   const [recordError, setRecordError] = useState('')
+  const [attachError, setAttachError] = useState('')
   const imageInputRef = useRef<HTMLInputElement>(null)
   const documentInputRef = useRef<HTMLInputElement>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
@@ -306,6 +310,7 @@ function Composer({
   const startRecording = async () => {
     if (!enabled || recording) return
     setRecordError('')
+    setAttachError('')
     setShowEmojiPicker(false)
     setShowAttachMenu(false)
 
@@ -375,11 +380,28 @@ function Composer({
   const handleFile = (event: ChangeEvent<HTMLInputElement>) => {
     if (!enabled || recording) return
     const file = event.target.files?.[0]
-    if (file) {
-      onSend({ fileName: file.name, text: `Attached: ${file.name}` })
-      event.target.value = ''
-    }
+    event.target.value = ''
     setShowAttachMenu(false)
+    setAttachError('')
+    if (!file) return
+
+    if (file.size > MAX_FILE_BYTES) {
+      setAttachError('File is too large. Please keep attachments under 8 MB.')
+      return
+    }
+
+    void blobToDataUrl(file)
+      .then((fileUrl) => {
+        onSend({
+          fileName: file.name,
+          fileUrl,
+          mimeType: file.type || 'application/octet-stream',
+          text: file.name,
+        })
+      })
+      .catch(() => {
+        setAttachError('Could not read that file. Try another photo or document.')
+      })
   }
 
   if (recording) {
@@ -425,6 +447,7 @@ function Composer({
         ))}
       </div>
       {recordError ? <p className="record-error">{recordError}</p> : null}
+      {attachError ? <p className="record-error">{attachError}</p> : null}
       <form
         className={`composer ${enabled ? '' : 'composer-disabled'}`}
         onSubmit={(event) => {
@@ -642,19 +665,23 @@ export default function ChatInterface() {
   const handleSend = async ({
     text,
     fileName,
+    fileUrl,
+    mimeType,
     audioUrl,
     durationSec,
   }: {
     text?: string
     fileName?: string
+    fileUrl?: string
+    mimeType?: string
     audioUrl?: string
     durationSec?: number
   }) => {
     const current = identityRef.current
-    if (!current || (!text && !fileName && !audioUrl)) return
+    if (!current || (!text && !fileName && !audioUrl && !fileUrl)) return
 
     const id = `me-${Date.now()}`
-    const type = audioUrl ? 'voice' : fileName ? 'file' : 'text'
+    const type = audioUrl ? 'voice' : fileName || fileUrl ? 'file' : 'text'
     const outgoing: ChatMessage = {
       id,
       from: 'me',
@@ -663,6 +690,8 @@ export default function ChatInterface() {
       content: text ?? fileName ?? 'Voice message',
       text,
       fileName,
+      fileUrl,
+      mimeType,
       audioUrl,
       durationSec,
       timestamp: formatTime(),
