@@ -1,0 +1,182 @@
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import path from 'node:path'
+import {
+  type ChatMessage,
+  type Conversation,
+  type ConversationSummary,
+  messagePreview,
+  withCustomerSeed,
+} from '@/lib/chat-messages'
+
+type ChatStoreData = {
+  conversations: Record<string, Conversation>
+}
+
+type GlobalChatStore = {
+  chatStoreData?: ChatStoreData
+  chatStoreWriteQueue?: Promise<void>
+}
+
+const globalStore = globalThis as typeof globalThis & GlobalChatStore
+const DATA_DIR = path.join(process.cwd(), 'data')
+const DATA_FILE = path.join(DATA_DIR, 'chats.json')
+
+function emptyStore(): ChatStoreData {
+  return { conversations: {} }
+}
+
+async function readFromDisk(): Promise<ChatStoreData> {
+  try {
+    const raw = await readFile(DATA_FILE, 'utf8')
+    const parsed = JSON.parse(raw) as ChatStoreData
+    if (!parsed?.conversations || typeof parsed.conversations !== 'object') {
+      return emptyStore()
+    }
+    return parsed
+  } catch {
+    return emptyStore()
+  }
+}
+
+async function ensureStore(): Promise<ChatStoreData> {
+  if (!globalStore.chatStoreData) {
+    globalStore.chatStoreData = await readFromDisk()
+  }
+  return globalStore.chatStoreData
+}
+
+async function persistStore(data: ChatStoreData) {
+  const write = async () => {
+    await mkdir(DATA_DIR, { recursive: true })
+    await writeFile(DATA_FILE, JSON.stringify(data, null, 2), 'utf8')
+  }
+
+  globalStore.chatStoreWriteQueue = (globalStore.chatStoreWriteQueue ?? Promise.resolve())
+    .then(write)
+    .catch(() => {
+      // Keep memory store even if disk write fails (e.g. serverless).
+    })
+
+  await globalStore.chatStoreWriteQueue
+}
+
+function toSummary(conversation: Conversation): ConversationSummary {
+  const last = conversation.messages[conversation.messages.length - 1]
+  return {
+    customerId: conversation.customerId,
+    customerName: conversation.customerName,
+    updatedAt: conversation.updatedAt,
+    messageCount: conversation.messages.length,
+    lastMessage: last ? messagePreview(last) : 'No messages yet',
+    unreadByAdmin: conversation.unreadByAdmin,
+  }
+}
+
+export async function listConversations(): Promise<ConversationSummary[]> {
+  const store = await ensureStore()
+  return Object.values(store.conversations)
+    .map(toSummary)
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+}
+
+export async function getConversation(customerId: string): Promise<Conversation | null> {
+  const store = await ensureStore()
+  return store.conversations[customerId] ?? null
+}
+
+export async function ensureConversation(
+  customerId: string,
+  customerName: string,
+): Promise<Conversation> {
+  const store = await ensureStore()
+  const existing = store.conversations[customerId]
+  if (existing) {
+    if (existing.customerName !== customerName && customerName.trim()) {
+      existing.customerName = customerName.trim()
+      existing.updatedAt = Date.now()
+      await persistStore(store)
+    }
+    return existing
+  }
+
+  const now = Date.now()
+  const conversation: Conversation = {
+    customerId,
+    customerName: customerName.trim() || 'Guest',
+    createdAt: now,
+    updatedAt: now,
+    unreadByAdmin: 0,
+    messages: withCustomerSeed(customerId, customerName.trim() || 'Guest'),
+  }
+  store.conversations[customerId] = conversation
+  await persistStore(store)
+  return conversation
+}
+
+export async function appendConversationMessage(
+  customerId: string,
+  customerName: string,
+  message: ChatMessage,
+  options?: { fromAdmin?: boolean },
+): Promise<Conversation> {
+  const conversation = await ensureConversation(customerId, customerName)
+  const store = await ensureStore()
+  const current = store.conversations[customerId] ?? conversation
+
+  const nextMessage: ChatMessage = {
+    ...message,
+    customerId,
+    id: message.id || `${options?.fromAdmin ? 'admin' : 'cust'}-${Date.now()}`,
+    createdAt: message.createdAt || Date.now(),
+  }
+
+  current.messages = [...current.messages, nextMessage]
+  current.updatedAt = nextMessage.createdAt
+  if (customerName.trim()) current.customerName = customerName.trim()
+
+  if (options?.fromAdmin) {
+    current.unreadByAdmin = 0
+  } else if (nextMessage.from === 'me') {
+    current.unreadByAdmin += 1
+  }
+
+  store.conversations[customerId] = current
+  await persistStore(store)
+  return current
+}
+
+export async function markConversationRead(customerId: string): Promise<Conversation | null> {
+  const store = await ensureStore()
+  const conversation = store.conversations[customerId]
+  if (!conversation) return null
+  conversation.unreadByAdmin = 0
+  await persistStore(store)
+  return conversation
+}
+
+export async function clearConversation(customerId: string): Promise<Conversation | null> {
+  const store = await ensureStore()
+  const existing = store.conversations[customerId]
+  if (!existing) return null
+
+  const now = Date.now()
+  const conversation: Conversation = {
+    customerId,
+    customerName: existing.customerName,
+    createdAt: existing.createdAt,
+    updatedAt: now,
+    unreadByAdmin: 0,
+    messages: withCustomerSeed(customerId, existing.customerName),
+  }
+  store.conversations[customerId] = conversation
+  await persistStore(store)
+  return conversation
+}
+
+export async function deleteConversation(customerId: string): Promise<boolean> {
+  const store = await ensureStore()
+  if (!store.conversations[customerId]) return false
+  delete store.conversations[customerId]
+  await persistStore(store)
+  return true
+}

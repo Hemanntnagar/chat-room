@@ -7,10 +7,14 @@ import {
   type ChangeEvent,
 } from 'react'
 import {
+  Check,
   Download,
+  FileText,
+  Image as ImageIcon,
   MessageCircle,
   Mic,
   Paperclip,
+  Pencil,
   Phone,
   Send,
   Smile,
@@ -21,23 +25,26 @@ import {
 import { Avatar, MessageBubble } from '@/components/message-bubble'
 import {
   type ChatMessage,
+  type Conversation,
   type MessageStatus,
-  HUB_NAME,
   formatTime,
-  loadMessages,
-  saveMessages,
 } from '@/lib/chat-messages'
+import {
+  canEditCustomerName,
+  createCustomerIdentity,
+  loadCustomerIdentity,
+  updateCustomerName,
+  type CustomerIdentity,
+} from '@/lib/customer-identity'
 
 const EMOJIS = ['🙂', '😀', '😂', '😍', '👍', '🙏', '🎉', '❤️', '🔥', '💬', '✅', '🤖']
 const QUICK_REPLIES = [
   { label: '🤖 🆔 I Need ID.', text: 'I Need ID.' },
   { label: '🤖 💬 I Need Support', text: 'I Need Support' },
 ]
-
-const AUTO_REPLIES: Record<string, string> = {
-  'i need id.': 'Sure! Please share your preferred game. We will create your demo ID shortly.',
-  'i need support': 'Our support team is here. Please describe your issue and we will help you right away.',
-}
+const POLL_MS = 2000
+const DOCUMENT_ACCEPT =
+  '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.rtf,.zip,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain'
 
 function formatDuration(totalSeconds: number) {
   const safe = Math.max(0, Math.floor(totalSeconds))
@@ -49,6 +56,58 @@ function formatDuration(totalSeconds: number) {
 function pickAudioMimeType() {
   const types = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg']
   return types.find((type) => typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(type))
+}
+
+async function blobToDataUrl(blob: Blob) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result))
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(blob)
+  })
+}
+
+async function ensureConversationOnServer(identity: CustomerIdentity) {
+  const response = await fetch('/api/chats', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      customerId: identity.id,
+      customerName: identity.name,
+    }),
+  })
+  if (!response.ok) throw new Error('Failed to start chat')
+  const data = (await response.json()) as { conversation: Conversation }
+  return data.conversation
+}
+
+async function fetchConversation(customerId: string) {
+  const response = await fetch(`/api/chats/${encodeURIComponent(customerId)}`, {
+    cache: 'no-store',
+  })
+  if (response.status === 404) return null
+  if (!response.ok) throw new Error('Failed to load chat')
+  const data = (await response.json()) as { conversation: Conversation }
+  return data.conversation
+}
+
+async function postCustomerMessage(
+  identity: CustomerIdentity,
+  message: ChatMessage,
+) {
+  const response = await fetch('/api/chats', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      customerId: identity.id,
+      customerName: identity.name,
+      message,
+      fromAdmin: false,
+    }),
+  })
+  if (!response.ok) throw new Error('Failed to send message')
+  const data = (await response.json()) as { conversation: Conversation }
+  return data.conversation
 }
 
 function Header() {
@@ -86,28 +145,48 @@ function Header() {
   )
 }
 
-function NameGate({
-  onJoin,
+function JoinedBar({
+  name,
+  canEdit,
+  onRename,
 }: {
-  onJoin: (name: string) => void
+  name: string
+  canEdit: boolean
+  onRename: (name: string) => void
 }) {
-  const [draft, setDraft] = useState('')
-  const canJoin = draft.trim().length > 0
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(name)
+
+  const startEditing = () => {
+    if (!canEdit) return
+    setDraft(name)
+    setEditing(true)
+  }
+
+  const cancelEditing = () => {
+    setDraft(name)
+    setEditing(false)
+  }
+
+  const saveName = () => {
+    const next = draft.trim()
+    if (!next || next === name) {
+      cancelEditing()
+      return
+    }
+    onRename(next)
+    setEditing(false)
+  }
 
   return (
-    <section className="name-gate" aria-label="Join chat room">
-      <div className="name-gate-card">
-        <div className="name-gate-icon">
-          <UserRound size={28} />
-        </div>
-        <h2>Enter your name to join</h2>
-        <p>Your name will be visible to everyone in this chat room.</p>
+    <section className="joined-bar" aria-live="polite">
+      <UserRound size={18} />
+      {editing ? (
         <form
-          className="name-gate-form"
+          className="joined-bar-form"
           onSubmit={(event) => {
             event.preventDefault()
-            if (!canJoin) return
-            onJoin(draft.trim())
+            saveName()
           }}
         >
           <label htmlFor="visitor-name" className="sr-only">
@@ -119,26 +198,37 @@ function NameGate({
             autoFocus
             maxLength={40}
             onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') cancelEditing()
+            }}
             placeholder="Your name"
             autoComplete="nickname"
           />
-          <button type="submit" disabled={!canJoin}>
-            Join chat
+          <button type="submit" aria-label="Save name" disabled={!draft.trim()}>
+            <Check size={16} />
+          </button>
+          <button type="button" aria-label="Cancel rename" onClick={cancelEditing}>
+            <X size={16} />
           </button>
         </form>
-      </div>
-    </section>
-  )
-}
-
-function JoinedBar({ name }: { name: string }) {
-  return (
-    <section className="joined-bar" aria-live="polite">
-      <UserRound size={18} />
-      <p>
-        Chatting as <strong>{name}</strong>
-        <span> · visible to everyone in this room</span>
-      </p>
+      ) : (
+        <>
+          <p>
+            Chatting as <strong>{name}</strong>
+          </p>
+          {canEdit ? (
+            <button
+              type="button"
+              className="joined-bar-edit"
+              aria-label="Change name"
+              onClick={startEditing}
+            >
+              <Pencil size={14} />
+              <span>Change</span>
+            </button>
+          ) : null}
+        </>
+      )}
     </section>
   )
 }
@@ -157,10 +247,12 @@ function Composer({
 }) {
   const [draft, setDraft] = useState('')
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
+  const [showAttachMenu, setShowAttachMenu] = useState(false)
   const [recording, setRecording] = useState(false)
   const [recordSeconds, setRecordSeconds] = useState(0)
   const [recordError, setRecordError] = useState('')
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  const imageInputRef = useRef<HTMLInputElement>(null)
+  const documentInputRef = useRef<HTMLInputElement>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const mediaStreamRef = useRef<MediaStream | null>(null)
   const chunksRef = useRef<BlobPart[]>([])
@@ -215,6 +307,7 @@ function Composer({
     if (!enabled || recording) return
     setRecordError('')
     setShowEmojiPicker(false)
+    setShowAttachMenu(false)
 
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
       setRecordError('Voice recording is not supported in this browser.')
@@ -247,11 +340,12 @@ function Composer({
         resetRecordingState()
 
         if (!send || blob.size === 0) return
-        const audioUrl = URL.createObjectURL(blob)
-        onSend({
-          audioUrl,
-          durationSec,
-          text: 'Voice message',
+        void blobToDataUrl(blob).then((audioUrl) => {
+          onSend({
+            audioUrl,
+            durationSec,
+            text: 'Voice message',
+          })
         })
       }
 
@@ -275,6 +369,7 @@ function Composer({
     onSend({ text })
     setDraft('')
     setShowEmojiPicker(false)
+    setShowAttachMenu(false)
   }
 
   const handleFile = (event: ChangeEvent<HTMLInputElement>) => {
@@ -284,6 +379,7 @@ function Composer({
       onSend({ fileName: file.name, text: `Attached: ${file.name}` })
       event.target.value = ''
     }
+    setShowAttachMenu(false)
   }
 
   if (recording) {
@@ -342,7 +438,10 @@ function Composer({
             aria-label="Add emoji"
             className="composer-icon"
             disabled={!enabled}
-            onClick={() => setShowEmojiPicker((value) => !value)}
+            onClick={() => {
+              setShowAttachMenu(false)
+              setShowEmojiPicker((value) => !value)
+            }}
           >
             <Smile size={22} />
           </button>
@@ -375,27 +474,60 @@ function Composer({
             </div>
           )}
         </div>
-        <button
-          type="button"
-          aria-label="Attach image or file"
-          className="composer-icon"
-          disabled={!enabled}
-          onClick={() => fileInputRef.current?.click()}
-        >
-          <Paperclip size={22} />
-        </button>
+        <div className="composer-tool-wrap">
+          <button
+            type="button"
+            aria-label="Attach photo or document"
+            className="composer-icon"
+            disabled={!enabled}
+            onClick={() => {
+              setShowEmojiPicker(false)
+              setShowAttachMenu((value) => !value)
+            }}
+          >
+            <Paperclip size={22} />
+          </button>
+          {showAttachMenu && enabled && (
+            <div className="attach-menu" role="menu" aria-label="Attachment options">
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => imageInputRef.current?.click()}
+              >
+                <ImageIcon size={18} />
+                <span>Photo</span>
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => documentInputRef.current?.click()}
+              >
+                <FileText size={18} />
+                <span>Document</span>
+              </button>
+            </div>
+          )}
+        </div>
         <input
-          ref={fileInputRef}
+          ref={imageInputRef}
           className="file-input"
           type="file"
-          accept="image/*,.pdf,.doc,.docx,.txt"
+          accept="image/*"
+          onChange={handleFile}
+          disabled={!enabled}
+        />
+        <input
+          ref={documentInputRef}
+          className="file-input"
+          type="file"
+          accept={DOCUMENT_ACCEPT}
           onChange={handleFile}
           disabled={!enabled}
         />
         <input
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
-          placeholder={enabled ? 'Type a message' : 'Enter your name above to start chatting'}
+          placeholder={enabled ? 'Type a message' : 'Connecting…'}
           aria-label="Message"
           disabled={!enabled}
         />
@@ -428,72 +560,86 @@ function Composer({
 
 export default function ChatInterface() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
-  const [visitorName, setVisitorName] = useState('')
+  const [identity, setIdentity] = useState<CustomerIdentity | null>(null)
   const [hydrated, setHydrated] = useState(false)
-  const joined = Boolean(visitorName)
+  const [syncError, setSyncError] = useState('')
+  const ready = Boolean(identity)
   const bottomRef = useRef<HTMLDivElement>(null)
-  const replyTimers = useRef<number[]>([])
+  const identityRef = useRef<CustomerIdentity | null>(null)
 
   useEffect(() => {
-    setMessages(loadMessages())
-    setHydrated(true)
-  }, [])
+    identityRef.current = identity
+  }, [identity])
 
   useEffect(() => {
-    if (!hydrated) return
-    saveMessages(messages)
-  }, [messages, hydrated])
+    let cancelled = false
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, joined])
+    const boot = async () => {
+      const saved = loadCustomerIdentity() ?? createCustomerIdentity()
 
-  useEffect(() => {
+      try {
+        const conversation =
+          (await fetchConversation(saved.id)) ?? (await ensureConversationOnServer(saved))
+        if (cancelled) return
+        setIdentity(saved)
+        setMessages(conversation.messages)
+        setSyncError('')
+      } catch {
+        if (!cancelled) {
+          setIdentity(saved)
+          setSyncError('Could not start chat. Try refreshing.')
+        }
+      } finally {
+        if (!cancelled) setHydrated(true)
+      }
+    }
+
+    void boot()
     return () => {
-      replyTimers.current.forEach((id) => window.clearTimeout(id))
+      cancelled = true
     }
   }, [])
 
-  const updateStatus = (id: string, status: MessageStatus) => {
-    setMessages((items) => items.map((item) => (item.id === id ? { ...item, status } : item)))
+  useEffect(() => {
+    if (!identity) return
+
+    const poll = async () => {
+      try {
+        const conversation = await fetchConversation(identity.id)
+        if (!conversation) return
+        setMessages(conversation.messages)
+        setSyncError('')
+      } catch {
+        setSyncError('Connection issue. Retrying…')
+      }
+    }
+
+    const timer = window.setInterval(() => {
+      void poll()
+    }, POLL_MS)
+
+    return () => window.clearInterval(timer)
+  }, [identity])
+
+  useEffect(() => {
+    if (!hydrated || !ready) return
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages, ready, hydrated])
+
+  const handleRename = async (name: string) => {
+    const current = identityRef.current
+    if (!current) return
+    const next = updateCustomerName(current, name)
+    setIdentity(next)
+    try {
+      await ensureConversationOnServer(next)
+      setSyncError('')
+    } catch {
+      setSyncError('Name saved locally, but server sync failed.')
+    }
   }
 
-  const pushReply = (text: string, delay = 900) => {
-    const timer = window.setTimeout(() => {
-      setMessages((items) => [
-        ...items,
-        {
-          id: `reply-${Date.now()}`,
-          from: 'them',
-          type: 'text',
-          senderName: HUB_NAME,
-          content: text,
-          text,
-          timestamp: formatTime(),
-          createdAt: Date.now(),
-        },
-      ])
-    }, delay)
-    replyTimers.current.push(timer)
-  }
-
-  const handleJoin = (name: string) => {
-    setVisitorName(name)
-    setMessages((items) => [
-      ...items,
-      {
-        id: `join-${Date.now()}`,
-        from: 'system',
-        type: 'system',
-        content: `${name} joined the chat room`,
-        timestamp: formatTime(),
-        createdAt: Date.now(),
-      },
-    ])
-    pushReply(`Welcome ${name}! How can we help you today?`, 700)
-  }
-
-  const handleSend = ({
+  const handleSend = async ({
     text,
     fileName,
     audioUrl,
@@ -504,7 +650,8 @@ export default function ChatInterface() {
     audioUrl?: string
     durationSec?: number
   }) => {
-    if (!joined || (!text && !fileName && !audioUrl)) return
+    const current = identityRef.current
+    if (!current || (!text && !fileName && !audioUrl)) return
 
     const id = `me-${Date.now()}`
     const type = audioUrl ? 'voice' : fileName ? 'file' : 'text'
@@ -512,7 +659,7 @@ export default function ChatInterface() {
       id,
       from: 'me',
       type,
-      senderName: visitorName,
+      senderName: current.name,
       content: text ?? fileName ?? 'Voice message',
       text,
       fileName,
@@ -521,27 +668,25 @@ export default function ChatInterface() {
       timestamp: formatTime(),
       status: 'sending',
       createdAt: Date.now(),
+      customerId: current.id,
     }
 
     setMessages((items) => [...items, outgoing])
 
-    window.setTimeout(() => updateStatus(id, 'sent'), 350)
-    window.setTimeout(() => updateStatus(id, 'delivered'), 900)
-    window.setTimeout(() => updateStatus(id, 'read'), 1600)
-
-    const normalized = (text ?? '').trim().toLowerCase()
-    const autoReply = AUTO_REPLIES[normalized]
-    if (audioUrl) {
-      pushReply(`${visitorName}, thanks for the voice message. We will listen and get back to you.`, 1600)
-    } else if (autoReply) {
-      pushReply(`${visitorName}, ${autoReply.charAt(0).toLowerCase()}${autoReply.slice(1)}`, 1800)
-    } else if (fileName) {
-      pushReply(`${visitorName}, got your file. Our team will review it shortly.`, 1600)
-    } else if (text) {
-      pushReply(
-        `${visitorName}, thanks for your message. A Profit Online Hub agent will reply shortly.`,
-        1800,
+    try {
+      const conversation = await postCustomerMessage(current, {
+        ...outgoing,
+        status: 'sent',
+      })
+      setMessages(conversation.messages)
+      setSyncError('')
+    } catch {
+      setMessages((items) =>
+        items.map((item) =>
+          item.id === id ? { ...item, status: 'sent' as MessageStatus } : item,
+        ),
       )
+      setSyncError('Message may not have reached admin. Check your connection.')
     }
   }
 
@@ -549,10 +694,19 @@ export default function ChatInterface() {
     <main className="app-shell">
       <section className="chat-window" aria-label="Chat with Profit Online Hub">
         <Header />
-        {joined ? <JoinedBar name={visitorName} /> : null}
+        {identity ? (
+          <JoinedBar
+            name={identity.name}
+            canEdit={canEditCustomerName(identity)}
+            onRename={(name) => void handleRename(name)}
+          />
+        ) : null}
+        {syncError ? <p className="sync-error">{syncError}</p> : null}
         <div className="chat-content">
-          {!joined ? (
-            <NameGate onJoin={handleJoin} />
+          {!hydrated ? (
+            <div className="system-message" role="status">
+              <span>Loading chat…</span>
+            </div>
           ) : (
             <div className="messages">
               <div className="day-separator" role="separator">
@@ -565,7 +719,7 @@ export default function ChatInterface() {
             </div>
           )}
         </div>
-        <Composer enabled={joined} onSend={handleSend} />
+        <Composer enabled={ready} onSend={(payload) => void handleSend(payload)} />
       </section>
     </main>
   )

@@ -192,7 +192,13 @@ function PresetBody({ preset }: { preset: NonNullable<ChatMessage['preset']> }) 
   )
 }
 
-export function MessageBubble({ message }: { message: ChatMessage }) {
+export function MessageBubble({
+  message,
+  perspective = 'visitor',
+}: {
+  message: ChatMessage
+  perspective?: 'visitor' | 'admin'
+}) {
   if (message.type === 'system' || message.from === 'system') {
     return (
       <div className="system-message" role="status">
@@ -201,8 +207,9 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
     )
   }
 
-  const outgoing = message.from === 'me'
-  const displayName = message.senderName ?? (outgoing ? 'You' : HUB_NAME)
+  const outgoing = perspective === 'admin' ? message.from === 'them' : message.from === 'me'
+  const displayName =
+    message.senderName ?? (outgoing ? (perspective === 'admin' ? HUB_NAME : 'You') : HUB_NAME)
 
   return (
     <article

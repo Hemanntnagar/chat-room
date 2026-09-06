@@ -16,10 +16,28 @@ export type ChatMessage = {
   status?: MessageStatus
   createdAt: number
   preset?: MessagePreset
+  customerId?: string
+}
+
+export type ConversationSummary = {
+  customerId: string
+  customerName: string
+  updatedAt: number
+  messageCount: number
+  lastMessage: string
+  unreadByAdmin: number
+}
+
+export type Conversation = {
+  customerId: string
+  customerName: string
+  createdAt: number
+  updatedAt: number
+  unreadByAdmin: number
+  messages: ChatMessage[]
 }
 
 export const HUB_NAME = 'Profit Online Hub'
-export const MESSAGES_STORAGE_KEY = 'chat-room:messages'
 export const ADMIN_SESSION_KEY = 'chat-room:admin'
 /** Demo admin password — change for production use */
 export const ADMIN_PASSWORD = 'admin'
@@ -58,49 +76,6 @@ export const SEED_MESSAGES: ChatMessage[] = [
   },
 ]
 
-function canUseStorage() {
-  return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined'
-}
-
-export function loadMessages(): ChatMessage[] {
-  if (!canUseStorage()) return SEED_MESSAGES
-  try {
-    const raw = window.localStorage.getItem(MESSAGES_STORAGE_KEY)
-    if (!raw) return SEED_MESSAGES
-    const parsed = JSON.parse(raw) as ChatMessage[]
-    if (!Array.isArray(parsed) || parsed.length === 0) return SEED_MESSAGES
-    return parsed
-  } catch {
-    return SEED_MESSAGES
-  }
-}
-
-export function saveMessages(messages: ChatMessage[]) {
-  if (!canUseStorage()) return
-  window.localStorage.setItem(MESSAGES_STORAGE_KEY, JSON.stringify(messages))
-  window.dispatchEvent(new CustomEvent('chat-messages-updated'))
-}
-
-export function clearMessages() {
-  saveMessages(SEED_MESSAGES)
-}
-
-export function subscribeToMessages(onChange: () => void) {
-  if (typeof window === 'undefined') return () => {}
-
-  const handleStorage = (event: StorageEvent) => {
-    if (event.key === MESSAGES_STORAGE_KEY) onChange()
-  }
-  const handleCustom = () => onChange()
-
-  window.addEventListener('storage', handleStorage)
-  window.addEventListener('chat-messages-updated', handleCustom)
-  return () => {
-    window.removeEventListener('storage', handleStorage)
-    window.removeEventListener('chat-messages-updated', handleCustom)
-  }
-}
-
 export function formatTime(date = new Date()) {
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
 }
@@ -123,4 +98,25 @@ export function setAdminAuthenticated(value: boolean) {
   if (typeof window === 'undefined') return
   if (value) window.sessionStorage.setItem(ADMIN_SESSION_KEY, '1')
   else window.sessionStorage.removeItem(ADMIN_SESSION_KEY)
+}
+
+export function withCustomerSeed(customerId: string, customerName: string): ChatMessage[] {
+  const now = Date.now()
+  return [
+    ...SEED_MESSAGES.map((message, index) => ({
+      ...message,
+      id: `${customerId}-${message.id}`,
+      customerId,
+      createdAt: now + index,
+    })),
+    {
+      id: `${customerId}-joined`,
+      from: 'system',
+      type: 'system',
+      content: `${customerName} joined the chat`,
+      timestamp: formatTime(),
+      createdAt: now + SEED_MESSAGES.length,
+      customerId,
+    },
+  ]
 }
