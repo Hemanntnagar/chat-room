@@ -11,11 +11,9 @@ import {
   Download,
   FileText,
   Image as ImageIcon,
-  MessageCircle,
   Mic,
   Paperclip,
   Pencil,
-  Phone,
   Send,
   Smile,
   Trash2,
@@ -43,8 +41,6 @@ const QUICK_REPLIES = [
   { label: '🤖 💬 I Need Support', text: 'I Need Support' },
 ]
 const POLL_MS = 2000
-const DOCUMENT_ACCEPT =
-  '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.rtf,.zip,.rar,.7z,.json,.xml,.md,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain,*/*'
 const MAX_FILE_BYTES = 8 * 1024 * 1024
 
 function formatDuration(totalSeconds: number) {
@@ -125,9 +121,6 @@ function Header() {
         </div>
       </div>
       <div className="header-actions">
-        <button aria-label="Call Profit Online Hub" className="icon-button header-call" type="button">
-          <Phone size={22} />
-        </button>
         <a
           href="https://bio.wa.link/profit"
           target="_blank"
@@ -135,7 +128,13 @@ function Header() {
           aria-label="Open WhatsApp"
           className="icon-button whatsapp-button"
         >
-          <MessageCircle size={25} />
+          <img
+            src="/whatsapp-icon.png"
+            alt=""
+            width={28}
+            height={28}
+            className="whatsapp-icon"
+          />
         </a>
         <button className="save-chat-button" type="button" aria-label="Save chat">
           <Download size={22} />
@@ -400,7 +399,7 @@ function Composer({
         })
       })
       .catch(() => {
-        setAttachError('Could not read that file. Try another photo or document.')
+        setAttachError('Could not read that file. Try another file.')
       })
   }
 
@@ -500,7 +499,7 @@ function Composer({
         <div className="composer-tool-wrap">
           <button
             type="button"
-            aria-label="Attach photo or document"
+            aria-label="Attach photo or file"
             className="composer-icon"
             disabled={!enabled}
             onClick={() => {
@@ -526,7 +525,7 @@ function Composer({
                 onClick={() => documentInputRef.current?.click()}
               >
                 <FileText size={18} />
-                <span>Document</span>
+                <span>File</span>
               </button>
             </div>
           )}
@@ -543,7 +542,6 @@ function Composer({
           ref={documentInputRef}
           className="file-input"
           type="file"
-          accept={DOCUMENT_ACCEPT}
           onChange={handleFile}
           disabled={!enabled}
         />

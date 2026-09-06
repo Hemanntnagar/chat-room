@@ -37,8 +37,7 @@ import {
 
 const POLL_MS = 2000
 const EMOJIS = ['🙂', '😀', '😂', '😍', '👍', '🙏', '🎉', '❤️', '🔥', '💬', '✅', '🤖']
-const DOCUMENT_ACCEPT =
-  '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.rtf,.zip,.rar,.7z,.json,.xml,.md,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain,*/*'
+const MAX_FILE_BYTES = 8 * 1024 * 1024
 
 type AdminSendPayload = {
   text?: string
@@ -48,8 +47,6 @@ type AdminSendPayload = {
   audioUrl?: string
   durationSec?: number
 }
-
-const MAX_FILE_BYTES = 8 * 1024 * 1024
 
 function formatDuration(totalSeconds: number) {
   const safe = Math.max(0, Math.floor(totalSeconds))
@@ -279,7 +276,7 @@ function AdminComposer({ onSend }: { onSend: (payload: AdminSendPayload) => void
         })
       })
       .catch(() => {
-        setAttachError('Could not read that file. Try another photo or document.')
+        setAttachError('Could not read that file. Try another file.')
       })
   }
 
@@ -366,7 +363,7 @@ function AdminComposer({ onSend }: { onSend: (payload: AdminSendPayload) => void
         <div className="composer-tool-wrap">
           <button
             type="button"
-            aria-label="Attach photo or document"
+            aria-label="Attach photo or file"
             className="composer-icon"
             onClick={() => {
               setShowEmojiPicker(false)
@@ -391,7 +388,7 @@ function AdminComposer({ onSend }: { onSend: (payload: AdminSendPayload) => void
                 onClick={() => documentInputRef.current?.click()}
               >
                 <FileText size={18} />
-                <span>Document</span>
+                <span>File</span>
               </button>
             </div>
           ) : null}
@@ -407,7 +404,6 @@ function AdminComposer({ onSend }: { onSend: (payload: AdminSendPayload) => void
           ref={documentInputRef}
           className="file-input"
           type="file"
-          accept={DOCUMENT_ACCEPT}
           onChange={handleFile}
         />
         <input

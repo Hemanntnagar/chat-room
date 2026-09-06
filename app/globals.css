@@ -144,6 +144,13 @@ button { cursor: pointer; }
 .icon-button:hover,
 .save-chat-button:hover { background: rgba(255, 255, 255, .1); }
 .whatsapp-button { color: #fff; text-decoration: none; }
+.whatsapp-icon {
+  display: block;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
+}
 .save-chat-button {
   display: flex;
   align-items: center;
