@@ -9,8 +9,6 @@ import {
 import {
   Check,
   Download,
-  FileText,
-  Image as ImageIcon,
   Mic,
   Paperclip,
   Pencil,
@@ -121,13 +119,7 @@ function Header() {
         </div>
       </div>
       <div className="header-actions">
-        <a
-          href="https://bio.wa.link/profit"
-          target="_blank"
-          rel="noreferrer"
-          aria-label="Open WhatsApp"
-          className="icon-button whatsapp-button"
-        >
+        <span className="icon-button whatsapp-button" aria-hidden="true" title="WhatsApp">
           <img
             src="/whatsapp-icon.png"
             alt=""
@@ -135,7 +127,7 @@ function Header() {
             height={28}
             className="whatsapp-icon"
           />
-        </a>
+        </span>
         <button className="save-chat-button" type="button" aria-label="Save chat">
           <Download size={22} />
           <span>Save Chat</span>
@@ -249,13 +241,11 @@ function Composer({
 }) {
   const [draft, setDraft] = useState('')
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
-  const [showAttachMenu, setShowAttachMenu] = useState(false)
   const [recording, setRecording] = useState(false)
   const [recordSeconds, setRecordSeconds] = useState(0)
   const [recordError, setRecordError] = useState('')
   const [attachError, setAttachError] = useState('')
-  const imageInputRef = useRef<HTMLInputElement>(null)
-  const documentInputRef = useRef<HTMLInputElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const mediaStreamRef = useRef<MediaStream | null>(null)
   const chunksRef = useRef<BlobPart[]>([])
@@ -311,7 +301,6 @@ function Composer({
     setRecordError('')
     setAttachError('')
     setShowEmojiPicker(false)
-    setShowAttachMenu(false)
 
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
       setRecordError('Voice recording is not supported in this browser.')
@@ -373,14 +362,12 @@ function Composer({
     onSend({ text })
     setDraft('')
     setShowEmojiPicker(false)
-    setShowAttachMenu(false)
   }
 
   const handleFile = (event: ChangeEvent<HTMLInputElement>) => {
     if (!enabled || recording) return
     const file = event.target.files?.[0]
     event.target.value = ''
-    setShowAttachMenu(false)
     setAttachError('')
     if (!file) return
 
@@ -463,7 +450,6 @@ function Composer({
             className="composer-icon"
             disabled={!enabled}
             onClick={() => {
-              setShowAttachMenu(false)
               setShowEmojiPicker((value) => !value)
             }}
           >
@@ -501,53 +487,19 @@ function Composer({
         <div className="composer-tool-wrap">
           <button
             type="button"
-            aria-label="Attach photo or file"
+            aria-label="Attach file"
             className="composer-icon"
             disabled={!enabled}
             onClick={() => {
               setShowEmojiPicker(false)
-              setShowAttachMenu((value) => !value)
+              fileInputRef.current?.click()
             }}
           >
             <Paperclip size={22} />
           </button>
-          {showAttachMenu && enabled && (
-            <div className="attach-menu" role="menu" aria-label="Attachment options">
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  setShowAttachMenu(false)
-                  imageInputRef.current?.click()
-                }}
-              >
-                <ImageIcon size={18} />
-                <span>Photo</span>
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  setShowAttachMenu(false)
-                  documentInputRef.current?.click()
-                }}
-              >
-                <FileText size={18} />
-                <span>File</span>
-              </button>
-            </div>
-          )}
         </div>
         <input
-          ref={imageInputRef}
-          className="file-input"
-          type="file"
-          accept="image/*"
-          onChange={handleFile}
-          disabled={!enabled}
-        />
-        <input
-          ref={documentInputRef}
+          ref={fileInputRef}
           className="file-input"
           type="file"
           onChange={handleFile}

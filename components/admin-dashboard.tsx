@@ -9,8 +9,6 @@ import {
 } from 'react'
 import {
   ArrowLeft,
-  FileText,
-  Image as ImageIcon,
   LogOut,
   MessageSquare,
   Mic,
@@ -127,13 +125,11 @@ function AdminLogin({ onSuccess }: { onSuccess: () => void }) {
 function AdminComposer({ onSend }: { onSend: (payload: AdminSendPayload) => void }) {
   const [draft, setDraft] = useState('')
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
-  const [showAttachMenu, setShowAttachMenu] = useState(false)
   const [recording, setRecording] = useState(false)
   const [recordSeconds, setRecordSeconds] = useState(0)
   const [recordError, setRecordError] = useState('')
   const [attachError, setAttachError] = useState('')
-  const imageInputRef = useRef<HTMLInputElement>(null)
-  const documentInputRef = useRef<HTMLInputElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const mediaStreamRef = useRef<MediaStream | null>(null)
   const chunksRef = useRef<BlobPart[]>([])
@@ -189,7 +185,6 @@ function AdminComposer({ onSend }: { onSend: (payload: AdminSendPayload) => void
     setRecordError('')
     setAttachError('')
     setShowEmojiPicker(false)
-    setShowAttachMenu(false)
 
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
       setRecordError('Voice recording is not supported in this browser.')
@@ -251,14 +246,12 @@ function AdminComposer({ onSend }: { onSend: (payload: AdminSendPayload) => void
     onSend({ text })
     setDraft('')
     setShowEmojiPicker(false)
-    setShowAttachMenu(false)
   }
 
   const handleFile = (event: ChangeEvent<HTMLInputElement>) => {
     if (recording) return
     const file = event.target.files?.[0]
     event.target.value = ''
-    setShowAttachMenu(false)
     setAttachError('')
     if (!file) return
 
@@ -328,7 +321,6 @@ function AdminComposer({ onSend }: { onSend: (payload: AdminSendPayload) => void
             aria-label="Add emoji"
             className="composer-icon"
             onClick={() => {
-              setShowAttachMenu(false)
               setShowEmojiPicker((value) => !value)
             }}
           >
@@ -366,51 +358,18 @@ function AdminComposer({ onSend }: { onSend: (payload: AdminSendPayload) => void
         <div className="composer-tool-wrap">
           <button
             type="button"
-            aria-label="Attach photo or file"
+            aria-label="Attach file"
             className="composer-icon"
             onClick={() => {
               setShowEmojiPicker(false)
-              setShowAttachMenu((value) => !value)
+              fileInputRef.current?.click()
             }}
           >
             <Paperclip size={22} />
           </button>
-          {showAttachMenu ? (
-            <div className="attach-menu" role="menu" aria-label="Attachment options">
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  setShowAttachMenu(false)
-                  imageInputRef.current?.click()
-                }}
-              >
-                <ImageIcon size={18} />
-                <span>Photo</span>
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  setShowAttachMenu(false)
-                  documentInputRef.current?.click()
-                }}
-              >
-                <FileText size={18} />
-                <span>File</span>
-              </button>
-            </div>
-          ) : null}
         </div>
         <input
-          ref={imageInputRef}
-          className="file-input"
-          type="file"
-          accept="image/*"
-          onChange={handleFile}
-        />
-        <input
-          ref={documentInputRef}
+          ref={fileInputRef}
           className="file-input"
           type="file"
           onChange={handleFile}

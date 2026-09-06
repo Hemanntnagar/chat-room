@@ -143,7 +143,12 @@ button { cursor: pointer; }
 }
 .icon-button:hover,
 .save-chat-button:hover { background: rgba(255, 255, 255, .1); }
-.whatsapp-button { color: #fff; text-decoration: none; }
+.whatsapp-button {
+  color: #fff;
+  text-decoration: none;
+  pointer-events: none;
+  cursor: default;
+}
 .whatsapp-icon {
   display: block;
   width: 28px;
@@ -563,7 +568,19 @@ button { cursor: pointer; }
   font-size: 15px;
   box-shadow: 0 1px 1px rgba(11, 20, 26, .06);
 }
-.file-input { display: none !important; }
+.file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+}
 
 .attach-menu {
   position: absolute;
