@@ -3,6 +3,7 @@ import {
   ensureConversation,
   listConversations,
 } from '@/lib/chat-store'
+import { findAutoReplyForMessage } from '@/lib/auto-replies'
 import { formatTime, type ChatMessage } from '@/lib/chat-messages'
 
 export const dynamic = 'force-dynamic'
@@ -66,12 +67,37 @@ export async function POST(request: Request) {
     customerId,
   }
 
-  const conversation = await appendConversationMessage(
+  let conversation = await appendConversationMessage(
     customerId,
     customerName,
     nextMessage,
     { fromAdmin },
   )
+
+  // Auto-reply when a customer message matches a configured quick-reply trigger.
+  if (!fromAdmin && nextMessage.from === 'me' && nextMessage.type === 'text') {
+    const auto = await findAutoReplyForMessage(nextMessage.content)
+    if (auto) {
+      const autoAt = Date.now()
+      const autoMessage: ChatMessage = {
+        id: `auto-${autoAt}`,
+        from: 'them',
+        type: 'text',
+        senderName: auto.senderName,
+        content: auto.reply,
+        timestamp: formatTime(new Date(autoAt)),
+        status: 'sent',
+        createdAt: autoAt,
+        customerId,
+      }
+      conversation = await appendConversationMessage(
+        customerId,
+        customerName,
+        autoMessage,
+        { fromAdmin: true },
+      )
+    }
+  }
 
   return Response.json({ conversation, message: nextMessage })
 }

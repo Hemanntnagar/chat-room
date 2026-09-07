@@ -15,11 +15,32 @@ function formatDuration(totalSeconds: number) {
   return `${minutes}:${String(seconds).padStart(2, '0')}`
 }
 
-export function Avatar({ small = false }: { small?: boolean }) {
+export function Avatar({
+  small = false,
+  name,
+  imageUrl,
+}: {
+  small?: boolean
+  name?: string
+  imageUrl?: string | null
+}) {
+  const label = name?.trim() || HUB_NAME
+
+  if (imageUrl) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={imageUrl}
+        alt={label}
+        className={`profile-avatar profile-avatar-photo ${small ? 'profile-avatar-small' : ''}`}
+      />
+    )
+  }
+
   return (
     <div
       className={`profile-avatar ${small ? 'profile-avatar-small' : ''}`}
-      aria-label="Profit Online Hub avatar"
+      aria-label={`${label} avatar`}
     >
       <span>Profit</span>
       <strong>ONLINE</strong>
@@ -245,9 +266,11 @@ function PresetBody({ preset }: { preset: NonNullable<ChatMessage['preset']> }) 
 export function MessageBubble({
   message,
   perspective = 'visitor',
+  hubProfile,
 }: {
   message: ChatMessage
   perspective?: 'visitor' | 'admin'
+  hubProfile?: { name?: string; imageUrl?: string | null }
 }) {
   if (message.type === 'system' || message.from === 'system') {
     return (
@@ -258,14 +281,23 @@ export function MessageBubble({
   }
 
   const outgoing = perspective === 'admin' ? message.from === 'them' : message.from === 'me'
-  const displayName =
-    message.senderName ?? (outgoing ? (perspective === 'admin' ? HUB_NAME : 'You') : HUB_NAME)
+  const hubName = hubProfile?.name?.trim() || HUB_NAME
+  const isHubMessage = message.from === 'them'
+  const displayName = isHubMessage
+    ? hubName
+    : message.senderName ?? (perspective === 'admin' ? 'Guest' : 'You')
 
   return (
     <article
       className={`message-row ${outgoing ? 'message-out' : 'message-in'} ${message.type === 'voice' ? 'voice-row' : ''}`}
     >
-      {!outgoing && <Avatar small />}
+      {!outgoing ? (
+        <Avatar
+          small
+          name={isHubMessage ? hubName : message.senderName || 'Guest'}
+          imageUrl={isHubMessage ? hubProfile?.imageUrl : undefined}
+        />
+      ) : null}
       <div
         className={`message-bubble ${outgoing ? 'bubble-out' : 'bubble-in'} ${message.type === 'voice' ? 'voice-bubble' : ''} ${message.type === 'file' ? 'file-bubble' : ''}`}
       >

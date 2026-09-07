@@ -20,8 +20,11 @@ import {
 } from 'lucide-react'
 import { Avatar, MessageBubble } from '@/components/message-bubble'
 import {
+  type AdminProfile,
   type ChatMessage,
   type Conversation,
+  CUSTOMER_QUICK_REPLIES,
+  HUB_NAME,
   formatTime,
 } from '@/lib/chat-messages'
 import {
@@ -34,10 +37,6 @@ import {
 import { uploadChatFile } from '@/lib/upload-client'
 
 const EMOJIS = ['🙂', '😀', '😂', '😍', '👍', '🙏', '🎉', '❤️', '🔥', '💬', '✅', '🤖']
-const QUICK_REPLIES = [
-  { label: '🤖 🆔 I Need ID.', text: 'I Need ID.' },
-  { label: '🤖 💬 I Need Support', text: 'I Need Support' },
-]
 const POLL_MS = 2000
 const MAX_FILE_BYTES = 8 * 1024 * 1024
 
@@ -105,16 +104,16 @@ async function postCustomerMessage(
   return data.conversation
 }
 
-function Header() {
+function Header({ profile }: { profile: AdminProfile }) {
   return (
     <header className="chat-header">
       <div className="header-profile">
         <div className="avatar-wrap">
-          <Avatar />
+          <Avatar name={profile.name} imageUrl={profile.imageUrl} />
           <span className="online-dot" />
         </div>
         <div>
-          <h1>Profit Online Hub</h1>
+          <h1>{profile.name}</h1>
           <p>online</p>
         </div>
       </div>
@@ -423,9 +422,9 @@ function Composer({
   return (
     <>
       <div className={`quick-replies ${enabled ? '' : 'composer-disabled'}`} aria-label="Quick replies">
-        {QUICK_REPLIES.map((reply) => (
+        {CUSTOMER_QUICK_REPLIES.map((reply) => (
           <button
-            key={reply.text}
+            key={reply.id}
             type="button"
             disabled={!enabled}
             onClick={() => onSend({ text: reply.text })}
@@ -542,6 +541,10 @@ function Composer({
 export default function ChatInterface() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [identity, setIdentity] = useState<CustomerIdentity | null>(null)
+  const [hubProfile, setHubProfile] = useState<AdminProfile>({
+    name: HUB_NAME,
+    imageUrl: null,
+  })
   const [hydrated, setHydrated] = useState(false)
   const [syncError, setSyncError] = useState('')
   const ready = Boolean(identity)
@@ -551,6 +554,36 @@ export default function ChatInterface() {
   useEffect(() => {
     identityRef.current = identity
   }, [identity])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const loadHubProfile = async () => {
+      try {
+        const response = await fetch('/api/admin-profile', { cache: 'no-store' })
+        if (!response.ok) return
+        const data = (await response.json()) as { profile: AdminProfile }
+        if (!cancelled && data.profile?.name) {
+          setHubProfile({
+            name: data.profile.name,
+            imageUrl: data.profile.imageUrl ?? null,
+          })
+        }
+      } catch {
+        // keep defaults
+      }
+    }
+
+    void loadHubProfile()
+    const timer = window.setInterval(() => {
+      void loadHubProfile()
+    }, POLL_MS)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -675,8 +708,8 @@ export default function ChatInterface() {
 
   return (
     <main className="app-shell">
-      <section className="chat-window" aria-label="Chat with Profit Online Hub">
-        <Header />
+      <section className="chat-window" aria-label={`Chat with ${hubProfile.name}`}>
+        <Header profile={hubProfile} />
         {identity ? (
           <JoinedBar
             name={identity.name}
@@ -696,7 +729,7 @@ export default function ChatInterface() {
                 <span>Today</span>
               </div>
               {messages.map((message) => (
-                <MessageBubble key={message.id} message={message} />
+                <MessageBubble key={message.id} message={message} hubProfile={hubProfile} />
               ))}
               <div ref={bottomRef} />
             </div>

@@ -11,6 +11,8 @@ import {
 } from 'react'
 import {
   ArrowLeft,
+  Bot,
+  Camera,
   LogOut,
   MessageSquare,
   Mic,
@@ -20,15 +22,20 @@ import {
   Shield,
   Smile,
   Trash2,
+  UserRound,
   Users,
   X,
 } from 'lucide-react'
 import { MessageBubble, Avatar } from '@/components/message-bubble'
 import {
+  type AdminProfile,
+  type AutoReplyConfig,
+  type AutoReplyRule,
   type ChatMessage,
   type Conversation,
   type ConversationSummary,
   ADMIN_PASSWORD,
+  CUSTOMER_QUICK_REPLIES,
   HUB_NAME,
   formatTime,
   isAdminAuthenticated,
@@ -124,7 +131,13 @@ function AdminLogin({ onSuccess }: { onSuccess: () => void }) {
   )
 }
 
-function AdminComposer({ onSend }: { onSend: (payload: AdminSendPayload) => void }) {
+function AdminComposer({
+  displayName,
+  onSend,
+}: {
+  displayName: string
+  onSend: (payload: AdminSendPayload) => void
+}) {
   const [draft, setDraft] = useState('')
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
   const [recording, setRecording] = useState(false)
@@ -379,7 +392,7 @@ function AdminComposer({ onSend }: { onSend: (payload: AdminSendPayload) => void
         <input
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
-          placeholder="Reply as Profit Online Hub…"
+          placeholder={`Reply as ${displayName}…`}
           aria-label="Admin reply"
           autoFocus
         />
@@ -416,6 +429,343 @@ function formatRelative(updatedAt: number) {
   return new Date(updatedAt).toLocaleDateString()
 }
 
+function AdminProfilePanel({
+  profile,
+  onSave,
+  onClose,
+}: {
+  profile: AdminProfile
+  onSave: (profile: AdminProfile) => void
+  onClose: () => void
+}) {
+  const [draft, setDraft] = useState(profile.name)
+  const [imageUrl, setImageUrl] = useState<string | null>(profile.imageUrl)
+  const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    setDraft(profile.name)
+    setImageUrl(profile.imageUrl)
+    setError('')
+  }, [profile])
+
+  const handleImage = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+
+    if (!file.type.startsWith('image/')) {
+      setError('Please choose an image file.')
+      return
+    }
+
+    setUploading(true)
+    setError('')
+    void uploadChatFile(file)
+      .then((uploaded) => {
+        setImageUrl(uploaded.fileUrl)
+      })
+      .catch((uploadError: unknown) => {
+        setError(
+          uploadError instanceof Error
+            ? uploadError.message
+            : 'Could not upload that image. Try another file.',
+        )
+      })
+      .finally(() => {
+        setUploading(false)
+      })
+  }
+
+  return (
+    <div className="admin-profile-overlay" role="presentation" onClick={onClose}>
+      <section
+        className="admin-profile-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="admin-profile-title"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="admin-profile-header">
+          <div>
+            <h2 id="admin-profile-title">Admin profile</h2>
+            <p>Name and photo are shown to customers in their chat.</p>
+          </div>
+          <button type="button" className="icon-button" aria-label="Close profile" onClick={onClose}>
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="admin-profile-photo-wrap">
+          {imageUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={imageUrl} alt="" className="admin-profile-avatar admin-profile-avatar-photo" />
+          ) : (
+            <div className="admin-profile-avatar" aria-hidden="true">
+              {(draft.trim() || profile.name || '?').slice(0, 1).toUpperCase()}
+            </div>
+          )}
+          <div className="admin-profile-photo-actions">
+            <button
+              type="button"
+              className="admin-profile-secondary"
+              disabled={uploading || saving}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <Camera size={16} />
+              {uploading ? 'Uploading…' : imageUrl ? 'Change photo' : 'Add photo'}
+            </button>
+            {imageUrl ? (
+              <button
+                type="button"
+                className="admin-profile-secondary"
+                disabled={uploading || saving}
+                onClick={() => setImageUrl(null)}
+              >
+                Remove
+              </button>
+            ) : null}
+          </div>
+          <input
+            ref={fileInputRef}
+            className="file-input"
+            type="file"
+            accept="image/*"
+            onChange={handleImage}
+          />
+        </div>
+
+        <form
+          className="admin-profile-form"
+          onSubmit={(event) => {
+            event.preventDefault()
+            const next = draft.trim()
+            if (!next) {
+              setError('Enter a display name.')
+              return
+            }
+            setSaving(true)
+            setError('')
+            void fetch('/api/admin-profile', {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ name: next, imageUrl }),
+            })
+              .then(async (response) => {
+                if (!response.ok) throw new Error('save failed')
+                const data = (await response.json()) as { profile: AdminProfile }
+                onSave(data.profile)
+              })
+              .catch(() => {
+                setError('Could not save profile. Try again.')
+              })
+              .finally(() => {
+                setSaving(false)
+              })
+          }}
+        >
+          <label htmlFor="admin-display-name">Display name</label>
+          <input
+            id="admin-display-name"
+            value={draft}
+            autoFocus
+            maxLength={48}
+            autoComplete="nickname"
+            placeholder={HUB_NAME}
+            onChange={(event) => {
+              setDraft(event.target.value)
+              setError('')
+            }}
+          />
+          {error ? <p className="admin-error">{error}</p> : null}
+          <div className="admin-profile-actions">
+            <button type="button" className="admin-profile-secondary" onClick={onClose}>
+              Cancel
+            </button>
+            <button type="submit" disabled={saving || uploading}>
+              {saving ? 'Saving…' : 'Save profile'}
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
+  )
+}
+
+function emptyAutoReplyRules(): AutoReplyRule[] {
+  return CUSTOMER_QUICK_REPLIES.map((item) => ({
+    triggerId: item.id,
+    triggerText: item.text,
+    reply: '',
+    enabled: false,
+  }))
+}
+
+function AdminAutoReplyPanel({
+  senderName,
+  onClose,
+}: {
+  senderName: string
+  onClose: () => void
+}) {
+  const [rules, setRules] = useState<AutoReplyRule[]>(emptyAutoReplyRules)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [savedNote, setSavedNote] = useState('')
+
+  useEffect(() => {
+    let cancelled = false
+    void fetch('/api/auto-replies', { cache: 'no-store' })
+      .then(async (response) => {
+        if (!response.ok) throw new Error('Failed to load')
+        const data = (await response.json()) as { config: AutoReplyConfig }
+        if (!cancelled) {
+          setRules(data.config.rules)
+          setError('')
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setError('Could not load auto-replies.')
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const updateRule = (triggerId: string, patch: Partial<AutoReplyRule>) => {
+    setRules((current) =>
+      current.map((rule) => (rule.triggerId === triggerId ? { ...rule, ...patch } : rule)),
+    )
+    setSavedNote('')
+  }
+
+  const save = async () => {
+    setSaving(true)
+    setError('')
+    setSavedNote('')
+    try {
+      const response = await fetch('/api/auto-replies', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          senderName,
+          rules: rules.map((rule) => ({
+            ...rule,
+            enabled: Boolean(rule.enabled && rule.reply.trim()),
+          })),
+        }),
+      })
+      if (!response.ok) throw new Error('save failed')
+      const data = (await response.json()) as { config: AutoReplyConfig }
+      setRules(data.config.rules)
+      setSavedNote('Auto-replies saved.')
+    } catch {
+      setError('Could not save auto-replies. Try again.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="admin-profile-overlay" role="presentation" onClick={onClose}>
+      <section
+        className="admin-profile-panel admin-auto-reply-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="admin-auto-reply-title"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="admin-profile-header">
+          <div>
+            <h2 id="admin-auto-reply-title">Auto replies</h2>
+            <p>
+              When a customer taps a quick reply, the bot sends your message automatically.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="icon-button"
+            aria-label="Close auto replies"
+            onClick={onClose}
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        {loading ? (
+          <p className="admin-auto-reply-status">Loading…</p>
+        ) : (
+          <div className="admin-auto-reply-list">
+            {CUSTOMER_QUICK_REPLIES.map((quick) => {
+              const rule = rules.find((item) => item.triggerId === quick.id) ?? {
+                triggerId: quick.id,
+                triggerText: quick.text,
+                reply: '',
+                enabled: false,
+              }
+              return (
+                <div key={quick.id} className="admin-auto-reply-card">
+                  <div className="admin-auto-reply-card-top">
+                    <div>
+                      <strong>{quick.label}</strong>
+                      <span>Customer sends: “{quick.text}”</span>
+                    </div>
+                    <label className="admin-auto-reply-toggle">
+                      <input
+                        type="checkbox"
+                        checked={rule.enabled && Boolean(rule.reply.trim())}
+                        disabled={!rule.reply.trim()}
+                        onChange={(event) => {
+                          updateRule(quick.id, { enabled: event.target.checked })
+                        }}
+                      />
+                      On
+                    </label>
+                  </div>
+                  <label className="sr-only" htmlFor={`auto-reply-${quick.id}`}>
+                    Auto reply for {quick.text}
+                  </label>
+                  <textarea
+                    id={`auto-reply-${quick.id}`}
+                    rows={3}
+                    value={rule.reply}
+                    placeholder="Write the bot reply for this message…"
+                    onChange={(event) => {
+                      const reply = event.target.value
+                      updateRule(quick.id, {
+                        reply,
+                        enabled: Boolean(reply.trim()),
+                      })
+                    }}
+                  />
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        {error ? <p className="admin-error">{error}</p> : null}
+        {savedNote ? <p className="admin-auto-reply-saved">{savedNote}</p> : null}
+
+        <div className="admin-profile-actions">
+          <button type="button" className="admin-profile-secondary" onClick={onClose}>
+            Close
+          </button>
+          <button type="button" disabled={loading || saving} onClick={() => void save()}>
+            {saving ? 'Saving…' : 'Save auto replies'}
+          </button>
+        </div>
+      </section>
+    </div>
+  )
+}
+
 const MOBILE_INBOX_MQ = '(max-width: 860px)'
 const SWIPE_BACK_RATIO = 0.28
 const SWIPE_BACK_PX = 72
@@ -426,6 +776,12 @@ export default function AdminDashboard() {
   const [authed, setAuthed] = useState(false)
   const [ready, setReady] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
+  const [hubProfile, setHubProfile] = useState<AdminProfile>({
+    name: HUB_NAME,
+    imageUrl: null,
+  })
+  const [showProfile, setShowProfile] = useState(false)
+  const [showAutoReplies, setShowAutoReplies] = useState(false)
   const [conversations, setConversations] = useState<ConversationSummary[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [active, setActive] = useState<Conversation | null>(null)
@@ -627,6 +983,28 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     if (!authed) return
+    let cancelled = false
+    void fetch('/api/admin-profile', { cache: 'no-store' })
+      .then(async (response) => {
+        if (!response.ok) throw new Error('Failed to load profile')
+        const data = (await response.json()) as { profile: AdminProfile }
+        if (!cancelled && data.profile?.name) {
+          setHubProfile({
+            name: data.profile.name,
+            imageUrl: data.profile.imageUrl ?? null,
+          })
+        }
+      })
+      .catch(() => {
+        // keep defaults
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [authed])
+
+  useEffect(() => {
+    if (!authed) return
 
     let cancelled = false
 
@@ -690,7 +1068,7 @@ export default function AdminDashboard() {
       id: `admin-${Date.now()}`,
       from: 'them',
       type,
-      senderName: HUB_NAME,
+      senderName: hubProfile.name,
       content: text ?? fileName ?? 'Voice message',
       text,
       fileName,
@@ -768,6 +1146,22 @@ export default function AdminDashboard() {
 
   return (
     <main className="admin-inbox-shell">
+      {showProfile ? (
+        <AdminProfilePanel
+          profile={hubProfile}
+          onClose={() => setShowProfile(false)}
+          onSave={(profile) => {
+            setHubProfile(profile)
+            setShowProfile(false)
+          }}
+        />
+      ) : null}
+      {showAutoReplies ? (
+        <AdminAutoReplyPanel
+          senderName={hubProfile.name}
+          onClose={() => setShowAutoReplies(false)}
+        />
+      ) : null}
       <section
         className={`admin-inbox ${isMobile ? (mobileShowingThread ? 'admin-inbox-mobile-thread' : 'admin-inbox-mobile-list') : ''}`}
         aria-label="Admin customer inbox"
@@ -778,9 +1172,26 @@ export default function AdminDashboard() {
               <h1>Customer chats</h1>
               <p>
                 {conversations.length} customer{conversations.length === 1 ? '' : 's'}
+                <span className="admin-sidebar-as"> · {hubProfile.name}</span>
               </p>
             </div>
             <div className="admin-sidebar-actions">
+              <button
+                type="button"
+                className="icon-button"
+                aria-label="Auto replies"
+                onClick={() => setShowAutoReplies(true)}
+              >
+                <Bot size={18} />
+              </button>
+              <button
+                type="button"
+                className="icon-button"
+                aria-label="Admin profile"
+                onClick={() => setShowProfile(true)}
+              >
+                <UserRound size={18} />
+              </button>
               <button
                 type="button"
                 className="icon-button"
@@ -883,7 +1294,7 @@ export default function AdminDashboard() {
                     </button>
                   ) : null}
                   <div className="avatar-wrap">
-                    <Avatar />
+                    <Avatar name={hubProfile.name} imageUrl={hubProfile.imageUrl} />
                     <span className="online-dot" />
                   </div>
                   <div>
@@ -912,7 +1323,7 @@ export default function AdminDashboard() {
               <div className="joined-bar">
                 <Shield size={18} />
                 <p>
-                  Replying as <strong>{HUB_NAME}</strong>
+                  Replying as <strong>{hubProfile.name}</strong>
                   <span> · customer sees your reply in their chat</span>
                 </p>
               </div>
@@ -925,13 +1336,21 @@ export default function AdminDashboard() {
                     <span>Customer conversation</span>
                   </div>
                   {active.messages.map((message) => (
-                    <MessageBubble key={message.id} message={message} perspective="admin" />
+                    <MessageBubble
+                      key={message.id}
+                      message={message}
+                      perspective="admin"
+                      hubProfile={hubProfile}
+                    />
                   ))}
                   <div ref={bottomRef} />
                 </div>
               </div>
 
-              <AdminComposer onSend={(payload) => void handleSend(payload)} />
+              <AdminComposer
+                displayName={hubProfile.name}
+                onSend={(payload) => void handleSend(payload)}
+              />
             </>
           )}
         </div>
