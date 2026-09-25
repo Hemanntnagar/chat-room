@@ -20,13 +20,24 @@ function guessContentType(fileName: string) {
 
 export async function GET(_request: Request, context: RouteContext) {
   const { name } = await context.params
-  const decoded = decodeURIComponent(name)
-  const file = await readUpload(decoded)
+  let decoded = name
+  try {
+    decoded = decodeURIComponent(name)
+  } catch {
+    decoded = name
+  }
+  // Prefer the decoded path; if that misses, try the raw param (some hosts double-encode).
+  const file =
+    (await readUpload(decoded)) ||
+    (decoded !== name ? await readUpload(name) : null) ||
+    (decoded.includes('%')
+      ? await readUpload(decoded.replace(/%20/g, ' '))
+      : null)
   if (!file) {
     return Response.json({ error: 'File not found' }, { status: 404 })
   }
 
-  const originalName = decoded.replace(/^\d+-[a-f0-9]+-/, '')
+  const originalName = decoded.replace(/^\d+-[a-f0-9]+-/, '').replace(/%20/g, ' ')
   const contentType =
     'mimeType' in file && typeof file.mimeType === 'string' && file.mimeType
       ? file.mimeType

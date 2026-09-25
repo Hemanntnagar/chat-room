@@ -1113,13 +1113,18 @@ button { cursor: pointer; }
   box-shadow: 0 0 0 3px rgba(0, 168, 132, 0.35);
 }
 
-.admin-profile-avatar-button.is-busy {
+.admin-profile-avatar-button.is-busy,
+.admin-profile-photo-label.is-busy {
   opacity: 0.65;
   cursor: default;
+  pointer-events: none;
 }
 
-.admin-profile-avatar-button:disabled {
-  cursor: default;
+.admin-profile-photo-actions .admin-profile-photo-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
 }
 
 .admin-profile-avatar-camera {

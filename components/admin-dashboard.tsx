@@ -446,6 +446,8 @@ function isImageFile(file: File) {
   return /\.(jpe?g|png|gif|webp|bmp|heic|heif|avif)$/i.test(file.name)
 }
 
+const ADMIN_PHOTO_INPUT_ID = 'admin-profile-photo-input'
+
 function AdminProfilePanel({
   profile,
   onSave,
@@ -461,20 +463,15 @@ function AdminProfilePanel({
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const uploadingRef = useRef(false)
 
   useEffect(() => {
+    // Don't clobber an in-progress local preview / upload.
+    if (uploadingRef.current) return
     setDraft(profile.name)
     setImageUrl(profile.imageUrl)
     setError('')
-  }, [profile])
-
-  const openPhotoPicker = () => {
-    if (uploading || saving) return
-    const input = fileInputRef.current
-    if (!input) return
-    input.value = ''
-    input.click()
-  }
+  }, [profile.name, profile.imageUrl])
 
   const saveProfile = async (nextName: string, nextImageUrl: string | null, closeAfter: boolean) => {
     const name = nextName.trim()
@@ -499,8 +496,9 @@ function AdminProfilePanel({
 
   const handleImage = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
+    // Allow picking the same file again later.
     event.target.value = ''
-    if (!file) return
+    if (!file || uploadingRef.current) return
 
     if (!isImageFile(file)) {
       setError('Please choose an image file (JPG, PNG, WebP, etc.).')
@@ -514,6 +512,7 @@ function AdminProfilePanel({
     const nameForSave = draft.trim() || profile.name || HUB_NAME
     const localPreview = URL.createObjectURL(file)
     setImageUrl(localPreview)
+    uploadingRef.current = true
     setUploading(true)
     setError('')
 
@@ -535,6 +534,7 @@ function AdminProfilePanel({
         )
       })
       .finally(() => {
+        uploadingRef.current = false
         setUploading(false)
       })
   }
@@ -546,8 +546,13 @@ function AdminProfilePanel({
     void saveProfile(nameForSave, null, false)
   }
 
+  const clearPhotoInput = () => {
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
   const initial = (draft.trim() || profile.name || '?').slice(0, 1).toUpperCase()
   const busy = uploading || saving
+  const photoLabel = imageUrl ? 'Change profile photo' : 'Add profile photo from computer'
 
   return (
     <div className="admin-profile-overlay" role="presentation" onClick={onClose}>
@@ -569,21 +574,25 @@ function AdminProfilePanel({
         </div>
 
         <div className="admin-profile-photo-wrap">
+          {/*
+            Use a real <label htmlFor> instead of input.click().
+            Browsers often block programmatic clicks on clipped/hidden file inputs.
+          */}
           <input
             ref={fileInputRef}
+            id={ADMIN_PHOTO_INPUT_ID}
             className="admin-profile-file-input"
             type="file"
             accept="image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif,image/avif,image/*"
-            tabIndex={-1}
-            aria-hidden="true"
+            disabled={busy}
+            onClick={clearPhotoInput}
             onChange={handleImage}
           />
-          <button
-            type="button"
+          <label
+            htmlFor={ADMIN_PHOTO_INPUT_ID}
             className={`admin-profile-avatar-button${busy ? ' is-busy' : ''}`}
-            aria-label={imageUrl ? 'Change profile photo' : 'Add profile photo from computer'}
-            disabled={busy}
-            onClick={openPhotoPicker}
+            aria-label={photoLabel}
+            title={photoLabel}
           >
             {imageUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
@@ -596,17 +605,16 @@ function AdminProfilePanel({
             <span className="admin-profile-avatar-camera" aria-hidden="true">
               <Camera size={16} />
             </span>
-          </button>
+          </label>
           <div className="admin-profile-photo-actions">
-            <button
-              type="button"
-              className="admin-profile-secondary"
-              disabled={busy}
-              onClick={openPhotoPicker}
+            <label
+              htmlFor={ADMIN_PHOTO_INPUT_ID}
+              className={`admin-profile-secondary admin-profile-photo-label${busy ? ' is-busy' : ''}`}
+              aria-disabled={busy}
             >
               <Camera size={16} />
               {uploading ? 'Uploading…' : imageUrl ? 'Change photo' : 'Add photo'}
-            </button>
+            </label>
             {imageUrl ? (
               <button
                 type="button"
@@ -618,6 +626,7 @@ function AdminProfilePanel({
               </button>
             ) : null}
           </div>
+          {error ? <p className="admin-error">{error}</p> : null}
           <p className="admin-profile-photo-hint">
             Pick a photo from your computer. It saves automatically and appears in every chat.
           </p>
@@ -643,7 +652,6 @@ function AdminProfilePanel({
               setError('')
             }}
           />
-          {error ? <p className="admin-error">{error}</p> : null}
           <div className="admin-profile-actions">
             <button type="button" className="admin-profile-secondary" onClick={onClose}>
               Cancel

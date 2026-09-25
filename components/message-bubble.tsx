@@ -24,15 +24,21 @@ export function Avatar({
   name?: string
   imageUrl?: string | null
 }) {
+  const [imageFailed, setImageFailed] = useState(false)
   const label = name?.trim() || HUB_NAME
 
-  if (imageUrl) {
+  useEffect(() => {
+    setImageFailed(false)
+  }, [imageUrl])
+
+  if (imageUrl && !imageFailed) {
     return (
       // eslint-disable-next-line @next/next/no-img-element
       <img
         src={imageUrl}
         alt={label}
         className={`profile-avatar profile-avatar-photo ${small ? 'profile-avatar-small' : ''}`}
+        onError={() => setImageFailed(true)}
       />
     )
   }
