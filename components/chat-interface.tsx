@@ -23,6 +23,7 @@ import {
   type AdminProfile,
   type ChatMessage,
   type Conversation,
+  type CustomerQuickReply,
   CUSTOMER_QUICK_REPLIES,
   HUB_NAME,
   formatTime,
@@ -227,9 +228,11 @@ function JoinedBar({
 
 function Composer({
   enabled,
+  quickReplies,
   onSend,
 }: {
   enabled: boolean
+  quickReplies: CustomerQuickReply[]
   onSend: (payload: {
     text?: string
     fileName?: string
@@ -423,7 +426,7 @@ function Composer({
   return (
     <>
       <div className={`quick-replies ${enabled ? '' : 'composer-disabled'}`} aria-label="Quick replies">
-        {CUSTOMER_QUICK_REPLIES.map((reply) => (
+        {quickReplies.map((reply) => (
           <button
             key={reply.id}
             type="button"
@@ -546,6 +549,13 @@ export default function ChatInterface() {
     name: '',
     imageUrl: null,
   })
+  const [quickReplies, setQuickReplies] = useState<CustomerQuickReply[]>(
+    CUSTOMER_QUICK_REPLIES.map((item) => ({
+      id: item.id,
+      label: item.label,
+      text: item.text,
+    })),
+  )
   const [hydrated, setHydrated] = useState(false)
   const [syncError, setSyncError] = useState('')
   const ready = Boolean(identity)
@@ -555,6 +565,35 @@ export default function ChatInterface() {
   useEffect(() => {
     identityRef.current = identity
   }, [identity])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const loadQuickReplies = async () => {
+      try {
+        const response = await fetch('/api/auto-replies?view=quick-replies', {
+          cache: 'no-store',
+        })
+        if (!response.ok) return
+        const data = (await response.json()) as { quickReplies: CustomerQuickReply[] }
+        if (!cancelled && Array.isArray(data.quickReplies) && data.quickReplies.length > 0) {
+          setQuickReplies(data.quickReplies)
+        }
+      } catch {
+        // keep defaults
+      }
+    }
+
+    void loadQuickReplies()
+    const timer = window.setInterval(() => {
+      void loadQuickReplies()
+    }, POLL_MS)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -738,7 +777,11 @@ export default function ChatInterface() {
             </div>
           )}
         </div>
-        <Composer enabled={ready} onSend={(payload) => void handleSend(payload)} />
+        <Composer
+          enabled={ready}
+          quickReplies={quickReplies}
+          onSend={(payload) => void handleSend(payload)}
+        />
       </section>
     </main>
   )

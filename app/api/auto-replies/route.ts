@@ -1,9 +1,19 @@
-import { getAutoReplyConfig, saveAutoReplyConfig } from '@/lib/auto-replies'
-import type { AutoReplyConfig, AutoReplyRule, CustomerQuickReplyId } from '@/lib/chat-messages'
+import {
+  getAutoReplyConfig,
+  getCustomerQuickReplies,
+  saveAutoReplyConfig,
+} from '@/lib/auto-replies'
+import type { AutoReplyConfig, AutoReplyRule } from '@/lib/chat-messages'
 
 export const dynamic = 'force-dynamic'
 
-export async function GET() {
+export async function GET(request: Request) {
+  const url = new URL(request.url)
+  if (url.searchParams.get('view') === 'quick-replies') {
+    const quickReplies = await getCustomerQuickReplies()
+    return Response.json({ quickReplies })
+  }
+
   const config = await getAutoReplyConfig()
   return Response.json({ config })
 }
@@ -23,6 +33,8 @@ export async function PUT(request: Request) {
         triggerId?: string
         reply?: string
         replies?: string[]
+        label?: string
+        triggerText?: string
       }
     >
   }
@@ -32,7 +44,8 @@ export async function PUT(request: Request) {
   }
 
   const rules = payload.rules.map((rule) => ({
-    triggerId: rule.triggerId as CustomerQuickReplyId,
+    triggerId: String(rule.triggerId ?? ''),
+    label: String(rule.label ?? ''),
     triggerText: String(rule.triggerText ?? ''),
     replies: Array.isArray(rule.replies)
       ? rule.replies.map((item) => String(item ?? ''))

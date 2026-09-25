@@ -5,7 +5,7 @@ import {
   HUB_NAME,
   type AutoReplyConfig,
   type AutoReplyRule,
-  type CustomerQuickReplyId,
+  type CustomerQuickReply,
 } from '@/lib/chat-messages'
 import { hasDatabase, readKv, writeKv } from '@/lib/db'
 import { getDataDir, readTextFile, writeTextFile } from '@/lib/runtime-fs'
@@ -15,11 +15,13 @@ type GlobalAutoReplyStore = {
   autoReplyWriteQueue?: Promise<void>
 }
 
-/** Older saved configs used a single `reply` string. */
+/** Older saved configs used a single `reply` string and fixed labels. */
 type LegacyAutoReplyRule = Partial<AutoReplyRule> & {
   triggerId?: string
   reply?: string
   replies?: string[]
+  label?: string
+  triggerText?: string
 }
 
 type LegacyAutoReplyConfig = {
@@ -29,24 +31,20 @@ type LegacyAutoReplyConfig = {
 
 const KV_KEY = 'auto-replies'
 const globalStore = globalThis as typeof globalThis & GlobalAutoReplyStore
+const DEFAULT_IDS: Set<string> = new Set(CUSTOMER_QUICK_REPLIES.map((item) => item.id))
 
 function dataFile() {
   return path.join(getDataDir(), 'auto-replies.json')
 }
 
-function defaultRules(): AutoReplyRule[] {
-  return CUSTOMER_QUICK_REPLIES.map((item) => ({
-    triggerId: item.id,
-    triggerText: item.text,
-    replies: [''],
-    enabled: false,
-  }))
+function defaultMeta(triggerId: string) {
+  return CUSTOMER_QUICK_REPLIES.find((item) => item.id === triggerId)
 }
 
 function normalizeReplies(rule?: LegacyAutoReplyRule | null): string[] {
   const fromList = (rule?.replies ?? [])
     .map((item) => String(item ?? ''))
-    .filter((item, index, list) => item.trim() || index === 0)
+    .filter((item, index) => item.trim() || index === 0)
 
   if (fromList.length > 0) return fromList
 
@@ -56,24 +54,61 @@ function normalizeReplies(rule?: LegacyAutoReplyRule | null): string[] {
   return ['']
 }
 
+function normalizeRule(
+  rule: LegacyAutoReplyRule | null | undefined,
+  fallback?: { id: string; label: string; text: string },
+): AutoReplyRule | null {
+  const triggerId = String(rule?.triggerId ?? fallback?.id ?? '').trim()
+  if (!triggerId) return null
+
+  const meta = fallback ?? defaultMeta(triggerId)
+  const replies = normalizeReplies(rule)
+  const hasContent = replies.some((reply) => reply.trim())
+  const triggerText = String(rule?.triggerText ?? meta?.text ?? '').trim() || meta?.text || ''
+  const label = String(rule?.label ?? meta?.label ?? triggerText).trim() || triggerText || 'Quick reply'
+
+  return {
+    triggerId,
+    label,
+    triggerText,
+    replies,
+    enabled: Boolean(rule?.enabled && hasContent && triggerText),
+  }
+}
+
 function normalizeConfig(input?: LegacyAutoReplyConfig | null): AutoReplyConfig {
+  const incoming = input?.rules ?? []
   const byId = new Map(
-    (input?.rules ?? []).map((rule) => [rule.triggerId, rule] as const),
+    incoming
+      .filter((rule) => rule.triggerId)
+      .map((rule) => [String(rule.triggerId), rule] as const),
   )
+
+  const rules: AutoReplyRule[] = []
+
+  for (const item of CUSTOMER_QUICK_REPLIES) {
+    const normalized = normalizeRule(byId.get(item.id), item)
+    if (normalized) rules.push(normalized)
+  }
+
+  for (const rule of incoming) {
+    const id = String(rule.triggerId ?? '').trim()
+    if (!id || DEFAULT_IDS.has(id)) continue
+    const normalized = normalizeRule(rule)
+    if (!normalized) continue
+    // Drop empty custom drafts that have no customer message and no replies.
+    if (
+      !normalized.triggerText.trim() &&
+      !normalized.replies.some((reply) => reply.trim())
+    ) {
+      continue
+    }
+    rules.push(normalized)
+  }
 
   return {
     senderName: input?.senderName?.trim() || HUB_NAME,
-    rules: CUSTOMER_QUICK_REPLIES.map((item) => {
-      const existing = byId.get(item.id)
-      const replies = normalizeReplies(existing)
-      const hasContent = replies.some((reply) => reply.trim())
-      return {
-        triggerId: item.id,
-        triggerText: item.text,
-        replies,
-        enabled: Boolean(existing?.enabled && hasContent),
-      }
-    }),
+    rules,
   }
 }
 
@@ -124,6 +159,17 @@ export async function getAutoReplyConfig(): Promise<AutoReplyConfig> {
   return loadConfig()
 }
 
+export async function getCustomerQuickReplies(): Promise<CustomerQuickReply[]> {
+  const config = await loadConfig()
+  return config.rules
+    .filter((rule) => rule.triggerText.trim())
+    .map((rule) => ({
+      id: rule.triggerId,
+      label: rule.label.trim() || rule.triggerText,
+      text: rule.triggerText.trim(),
+    }))
+}
+
 export async function saveAutoReplyConfig(
   input: Partial<AutoReplyConfig> & { rules?: LegacyAutoReplyRule[] },
 ): Promise<AutoReplyConfig> {
@@ -131,7 +177,8 @@ export async function saveAutoReplyConfig(
   const next = normalizeConfig({
     senderName: input.senderName ?? existing.senderName,
     rules: (input.rules ?? existing.rules).map((rule) => ({
-      triggerId: rule.triggerId as CustomerQuickReplyId,
+      triggerId: String(rule.triggerId ?? ''),
+      label: rule.label,
       triggerText: rule.triggerText,
       replies: normalizeReplies(rule),
       enabled: rule.enabled,
@@ -151,6 +198,7 @@ export async function findAutoReplyForMessage(
   const match = config.rules.find(
     (rule) =>
       rule.enabled &&
+      rule.triggerText.trim() &&
       rule.replies.some((reply) => reply.trim()) &&
       rule.triggerText.trim().toLowerCase() === normalized,
   )

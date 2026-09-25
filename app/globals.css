@@ -1344,10 +1344,58 @@ button { cursor: pointer; }
   border-color: var(--wa-green);
 }
 
+.admin-auto-reply-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.admin-auto-reply-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.admin-auto-reply-field span {
+  font-size: 12px;
+  font-weight: 600;
+  color: #667781;
+}
+
+.admin-auto-reply-field input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #d1d7db;
+  border-radius: 8px;
+  outline: none;
+  font: inherit;
+  font-size: 14px;
+  background: #fff;
+  color: #111b21;
+}
+
+.admin-auto-reply-field input:focus {
+  border-color: var(--wa-green);
+}
+
 .admin-auto-reply-messages {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.admin-auto-reply-add-secondary {
+  border-style: solid;
+  color: #54656f;
+  font-weight: 500;
+}
+
+.admin-auto-reply-add-secondary:hover {
+  border-color: #c5cdd3;
+  background: #f0f2f5;
+  color: #111b21;
 }
 
 .admin-auto-reply-message-head {

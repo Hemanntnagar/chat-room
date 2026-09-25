@@ -668,10 +668,30 @@ function AdminProfilePanel({
 function emptyAutoReplyRules(): AutoReplyRule[] {
   return CUSTOMER_QUICK_REPLIES.map((item) => ({
     triggerId: item.id,
+    label: item.label,
     triggerText: item.text,
     replies: [''],
     enabled: false,
   }))
+}
+
+function newAutoReplyRule(): AutoReplyRule {
+  return {
+    triggerId: `custom-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    label: '',
+    triggerText: '',
+    replies: [''],
+    enabled: false,
+  }
+}
+
+function withRuleDefaults(rule: AutoReplyRule): AutoReplyRule {
+  return {
+    ...rule,
+    label: rule.label ?? '',
+    triggerText: rule.triggerText ?? '',
+    replies: rule.replies?.length ? rule.replies : [''],
+  }
 }
 
 function AdminAutoReplyPanel({
@@ -694,12 +714,7 @@ function AdminAutoReplyPanel({
         if (!response.ok) throw new Error('Failed to load')
         const data = (await response.json()) as { config: AutoReplyConfig }
         if (!cancelled) {
-          setRules(
-            data.config.rules.map((rule) => ({
-              ...rule,
-              replies: rule.replies.length > 0 ? rule.replies : [''],
-            })),
-          )
+          setRules(data.config.rules.map(withRuleDefaults))
           setError('')
         }
       })
@@ -732,14 +747,14 @@ function AdminAutoReplyPanel({
         return {
           ...rule,
           replies,
-          enabled: hasContent,
+          enabled: Boolean(hasContent && rule.triggerText.trim()),
         }
       }),
     )
     setSavedNote('')
   }
 
-  const addReplyMessage = (triggerId: string) => {
+  const addBotReply = (triggerId: string) => {
     setRules((current) =>
       current.map((rule) =>
         rule.triggerId === triggerId
@@ -750,7 +765,7 @@ function AdminAutoReplyPanel({
     setSavedNote('')
   }
 
-  const removeReplyMessage = (triggerId: string, index: number) => {
+  const removeBotReply = (triggerId: string, index: number) => {
     setRules((current) =>
       current.map((rule) => {
         if (rule.triggerId !== triggerId) return rule
@@ -761,10 +776,26 @@ function AdminAutoReplyPanel({
         return {
           ...rule,
           replies,
-          enabled: Boolean(rule.enabled && replies.some((reply) => reply.trim())),
+          enabled: Boolean(
+            rule.enabled &&
+              replies.some((reply) => reply.trim()) &&
+              rule.triggerText.trim(),
+          ),
         }
       }),
     )
+    setSavedNote('')
+  }
+
+  const addMessagePair = () => {
+    setRules((current) => [...current, newAutoReplyRule()])
+    setSavedNote('')
+  }
+
+  const removeRule = (triggerId: string) => {
+    const isDefault = CUSTOMER_QUICK_REPLIES.some((item) => item.id === triggerId)
+    if (isDefault) return
+    setRules((current) => current.filter((rule) => rule.triggerId !== triggerId))
     setSavedNote('')
   }
 
@@ -779,23 +810,22 @@ function AdminAutoReplyPanel({
         body: JSON.stringify({
           senderName,
           rules: rules.map((rule) => {
+            const triggerText = rule.triggerText.trim()
             const replies = rule.replies.map((reply) => reply.trim()).filter(Boolean)
+            const label = rule.label.trim() || triggerText
             return {
               ...rule,
+              label,
+              triggerText,
               replies: replies.length > 0 ? replies : [''],
-              enabled: Boolean(rule.enabled && replies.length > 0),
+              enabled: Boolean(rule.enabled && triggerText && replies.length > 0),
             }
           }),
         }),
       })
       if (!response.ok) throw new Error('save failed')
       const data = (await response.json()) as { config: AutoReplyConfig }
-      setRules(
-        data.config.rules.map((rule) => ({
-          ...rule,
-          replies: rule.replies.length > 0 ? rule.replies : [''],
-        })),
-      )
+      setRules(data.config.rules.map(withRuleDefaults))
       setSavedNote('Auto-replies saved.')
     } catch {
       setError('Could not save auto-replies. Try again.')
@@ -817,8 +847,8 @@ function AdminAutoReplyPanel({
           <div>
             <h2 id="admin-auto-reply-title">Auto replies</h2>
             <p>
-              When a customer taps a quick reply, the bot sends your messages automatically.
-              Add more than one message without overwriting the previous ones.
+              Edit the customer message and bot reply for each option. Add a new message to
+              create another customer message + auto reply pair.
             </p>
           </div>
           <button
@@ -835,74 +865,118 @@ function AdminAutoReplyPanel({
           <p className="admin-auto-reply-status">Loading…</p>
         ) : (
           <div className="admin-auto-reply-list">
-            {CUSTOMER_QUICK_REPLIES.map((quick) => {
-              const rule = rules.find((item) => item.triggerId === quick.id) ?? {
-                triggerId: quick.id,
-                triggerText: quick.text,
-                replies: [''],
-                enabled: false,
-              }
-              const hasContent = rule.replies.some((reply) => reply.trim())
+            {rules.map((rule) => {
+              const hasContent =
+                Boolean(rule.triggerText.trim()) &&
+                rule.replies.some((reply) => reply.trim())
+              const isDefault = CUSTOMER_QUICK_REPLIES.some(
+                (item) => item.id === rule.triggerId,
+              )
               return (
-                <div key={quick.id} className="admin-auto-reply-card">
+                <div key={rule.triggerId} className="admin-auto-reply-card">
                   <div className="admin-auto-reply-card-top">
-                    <div>
-                      <strong>{quick.label}</strong>
-                      <span>Customer sends: “{quick.text}”</span>
+                    <strong>{rule.label.trim() || 'New message'}</strong>
+                    <div className="admin-auto-reply-card-actions">
+                      {!isDefault ? (
+                        <button
+                          type="button"
+                          className="admin-auto-reply-remove"
+                          onClick={() => removeRule(rule.triggerId)}
+                        >
+                          Delete
+                        </button>
+                      ) : null}
+                      <label className="admin-auto-reply-toggle">
+                        <input
+                          type="checkbox"
+                          checked={rule.enabled && hasContent}
+                          disabled={!hasContent}
+                          onChange={(event) => {
+                            updateRule(rule.triggerId, { enabled: event.target.checked })
+                          }}
+                        />
+                        On
+                      </label>
                     </div>
-                    <label className="admin-auto-reply-toggle">
-                      <input
-                        type="checkbox"
-                        checked={rule.enabled && hasContent}
-                        disabled={!hasContent}
-                        onChange={(event) => {
-                          updateRule(quick.id, { enabled: event.target.checked })
-                        }}
-                      />
-                      On
-                    </label>
                   </div>
+
+                  <label className="admin-auto-reply-field">
+                    <span>Button label</span>
+                    <input
+                      type="text"
+                      value={rule.label}
+                      placeholder="🤖 🆔 I Need ID."
+                      onChange={(event) => {
+                        updateRule(rule.triggerId, { label: event.target.value })
+                      }}
+                    />
+                  </label>
+
+                  <label className="admin-auto-reply-field">
+                    <span>Customer message</span>
+                    <input
+                      type="text"
+                      value={rule.triggerText}
+                      placeholder="I Need ID."
+                      onChange={(event) => {
+                        const triggerText = event.target.value
+                        const repliesHaveContent = rule.replies.some((reply) => reply.trim())
+                        updateRule(rule.triggerId, {
+                          triggerText,
+                          enabled: Boolean(triggerText.trim() && repliesHaveContent),
+                        })
+                      }}
+                    />
+                  </label>
+
                   <div className="admin-auto-reply-messages">
                     {rule.replies.map((reply, index) => (
-                      <div key={`${quick.id}-reply-${index}`} className="admin-auto-reply-message">
+                      <div
+                        key={`${rule.triggerId}-reply-${index}`}
+                        className="admin-auto-reply-message"
+                      >
                         <div className="admin-auto-reply-message-head">
-                          <span>Message {index + 1}</span>
+                          <span>Auto reply {index + 1}</span>
                           {rule.replies.length > 1 ? (
                             <button
                               type="button"
                               className="admin-auto-reply-remove"
-                              aria-label={`Remove message ${index + 1} for ${quick.text}`}
-                              onClick={() => removeReplyMessage(quick.id, index)}
+                              aria-label={`Remove auto reply ${index + 1}`}
+                              onClick={() => removeBotReply(rule.triggerId, index)}
                             >
                               Remove
                             </button>
                           ) : null}
                         </div>
-                        <label className="sr-only" htmlFor={`auto-reply-${quick.id}-${index}`}>
-                          Auto reply message {index + 1} for {quick.text}
+                        <label className="sr-only" htmlFor={`auto-reply-${rule.triggerId}-${index}`}>
+                          Auto reply {index + 1}
                         </label>
                         <textarea
-                          id={`auto-reply-${quick.id}-${index}`}
+                          id={`auto-reply-${rule.triggerId}-${index}`}
                           rows={3}
                           value={reply}
                           placeholder="Write the bot reply…"
                           onChange={(event) => {
-                            updateReplyText(quick.id, index, event.target.value)
+                            updateReplyText(rule.triggerId, index, event.target.value)
                           }}
                         />
                       </div>
                     ))}
                     <button
                       type="button"
-                      className="admin-auto-reply-add"
-                      onClick={() => addReplyMessage(quick.id)}
+                      className="admin-auto-reply-add admin-auto-reply-add-secondary"
+                      onClick={() => addBotReply(rule.triggerId)}
                     >
-                      Add message
+                      Add another auto reply
                     </button>
                   </div>
                 </div>
               )
             })}
+
+            <button type="button" className="admin-auto-reply-add" onClick={addMessagePair}>
+              Add message
+            </button>
           </div>
         )}
 

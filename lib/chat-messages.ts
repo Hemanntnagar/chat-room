@@ -44,16 +44,25 @@ export const ADMIN_SESSION_KEY = 'chat-room:admin'
 /** Demo admin password — change for production use */
 export const ADMIN_PASSWORD = 'admin'
 
-/** Quick replies shown to visitors — admin can bind auto-replies to these. */
+/** Default quick replies — admin can edit label/text and add more. */
 export const CUSTOMER_QUICK_REPLIES = [
   { id: 'need-id', label: '🤖 🆔 I Need ID.', text: 'I Need ID.' },
   { id: 'need-support', label: '🤖 💬 I Need Support', text: 'I Need Support' },
 ] as const
 
-export type CustomerQuickReplyId = (typeof CUSTOMER_QUICK_REPLIES)[number]['id']
+export type CustomerQuickReplyId = string
+
+export type CustomerQuickReply = {
+  id: string
+  label: string
+  text: string
+}
 
 export type AutoReplyRule = {
-  triggerId: CustomerQuickReplyId
+  triggerId: string
+  /** Button label shown to the customer. */
+  label: string
+  /** Customer message text (button send + auto-reply match). */
   triggerText: string
   /** Ordered bot messages sent when this trigger matches. */
   replies: string[]
