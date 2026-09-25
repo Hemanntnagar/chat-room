@@ -1,5 +1,12 @@
 import path from 'node:path'
 import { randomBytes } from 'node:crypto'
+import { put } from '@vercel/blob'
+import {
+  hasBlobStore,
+  hasDatabase,
+  readUploadFromDb,
+  saveUploadToDb,
+} from '@/lib/db'
 import {
   getDataDir,
   readBinaryFile,
@@ -7,7 +14,7 @@ import {
 } from '@/lib/runtime-fs'
 
 const MAX_FILE_BYTES = 8 * 1024 * 1024
-/** Prefer data-URL fallback under this size when disk is unavailable. */
+/** Prefer data-URL fallback under this size when disk/db/blob unavailable. */
 const DATA_URL_FALLBACK_MAX = 1.5 * 1024 * 1024
 
 export { MAX_FILE_BYTES }
@@ -35,6 +42,30 @@ export async function saveUpload(file: File) {
   const buffer = Buffer.from(await file.arrayBuffer())
   const mimeType = file.type || 'application/octet-stream'
 
+  if (hasBlobStore()) {
+    const blob = await put(`chat-room/${storedName}`, buffer, {
+      access: 'public',
+      contentType: mimeType,
+      addRandomSuffix: false,
+    })
+    return {
+      fileName: file.name || safeName,
+      fileUrl: blob.url,
+      mimeType,
+      size: file.size,
+    }
+  }
+
+  if (hasDatabase()) {
+    await saveUploadToDb(storedName, mimeType, buffer)
+    return {
+      fileName: file.name || safeName,
+      fileUrl: `/api/uploads/${encodeURIComponent(storedName)}`,
+      mimeType,
+      size: file.size,
+    }
+  }
+
   const saved = await writeBinaryFile(path.join(uploadDir(), storedName), buffer)
   if (saved) {
     return {
@@ -45,7 +76,7 @@ export async function saveUpload(file: File) {
     }
   }
 
-  // Serverless/read-only FS: embed small files so chat still works.
+  // Last resort for serverless without DB/Blob: embed small files.
   if (file.size <= DATA_URL_FALLBACK_MAX) {
     return {
       fileName: file.name || safeName,
@@ -56,7 +87,7 @@ export async function saveUpload(file: File) {
   }
 
   throw new Error(
-    'Could not store that file on this host. Try a smaller image (under 1.5 MB).',
+    'Could not store that file. Add Vercel Blob or Postgres, or try a smaller image (under 1.5 MB).',
   )
 }
 
@@ -65,6 +96,14 @@ export async function readUpload(storedName: string) {
   if (!safe || safe !== storedName || storedName.includes('..')) {
     return null
   }
+
+  if (hasDatabase()) {
+    const fromDb = await readUploadFromDb(safe)
+    if (fromDb) {
+      return { data: fromDb.data, fileName: safe, mimeType: fromDb.mimeType }
+    }
+  }
+
   const data = await readBinaryFile(path.join(uploadDir(), safe))
   if (!data) return null
   return { data, fileName: safe }

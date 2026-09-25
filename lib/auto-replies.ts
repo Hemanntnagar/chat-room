@@ -7,6 +7,7 @@ import {
   type AutoReplyRule,
   type CustomerQuickReplyId,
 } from '@/lib/chat-messages'
+import { hasDatabase, readKv, writeKv } from '@/lib/db'
 import { getDataDir, readTextFile, writeTextFile } from '@/lib/runtime-fs'
 
 type GlobalAutoReplyStore = {
@@ -14,6 +15,7 @@ type GlobalAutoReplyStore = {
   autoReplyWriteQueue?: Promise<void>
 }
 
+const KV_KEY = 'auto-replies'
 const globalStore = globalThis as typeof globalThis & GlobalAutoReplyStore
 
 function dataFile() {
@@ -58,7 +60,12 @@ async function readFromDisk(): Promise<AutoReplyConfig> {
   }
 }
 
-async function ensureConfig(): Promise<AutoReplyConfig> {
+async function loadConfig(): Promise<AutoReplyConfig> {
+  if (hasDatabase()) {
+    const fromDb = await readKv<AutoReplyConfig>(KV_KEY)
+    return normalizeConfig(fromDb)
+  }
+
   if (!globalStore.autoReplyConfig) {
     globalStore.autoReplyConfig = await readFromDisk()
   }
@@ -66,6 +73,13 @@ async function ensureConfig(): Promise<AutoReplyConfig> {
 }
 
 async function persistConfig(config: AutoReplyConfig) {
+  if (hasDatabase()) {
+    await writeKv(KV_KEY, config)
+    globalStore.autoReplyConfig = config
+    return
+  }
+
+  globalStore.autoReplyConfig = config
   const write = async () => {
     await writeTextFile(dataFile(), JSON.stringify(config, null, 2))
   }
@@ -80,7 +94,7 @@ async function persistConfig(config: AutoReplyConfig) {
 }
 
 export async function getAutoReplyConfig(): Promise<AutoReplyConfig> {
-  return ensureConfig()
+  return loadConfig()
 }
 
 export async function saveAutoReplyConfig(
@@ -95,7 +109,6 @@ export async function saveAutoReplyConfig(
       enabled: rule.enabled,
     })),
   })
-  globalStore.autoReplyConfig = next
   await persistConfig(next)
   return next
 }
@@ -106,7 +119,7 @@ export async function findAutoReplyForMessage(
   const normalized = content.trim().toLowerCase()
   if (!normalized) return null
 
-  const config = await ensureConfig()
+  const config = await loadConfig()
   const match = config.rules.find(
     (rule) =>
       rule.enabled &&

@@ -24,6 +24,22 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
+## Persistent storage (Vercel)
+
+On Vercel, filesystem storage is temporary. To keep chats, admin profile, and uploads:
+
+1. Open your project in the [Vercel Dashboard](https://vercel.com/dashboard) → **Storage**
+2. Create **Postgres** (Neon) and connect it to this project
+3. Create **Blob** and connect it to this project
+4. Redeploy
+
+Env vars used (also see `env.example`):
+
+- `POSTGRES_URL` — chats, admin profile, auto-replies
+- `BLOB_READ_WRITE_TOKEN` — photos and file attachments
+
+Locally without those vars, data is stored in `./data`.
+
 ## Learn More
 
 To learn more, take a look at the following resources:

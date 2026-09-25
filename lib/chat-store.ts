@@ -7,6 +7,7 @@ import {
   messagePreview,
   withCustomerSeed,
 } from '@/lib/chat-messages'
+import { hasDatabase, readKv, writeKv } from '@/lib/db'
 import { getDataDir, readTextFile, writeTextFile } from '@/lib/runtime-fs'
 
 type ChatStoreData = {
@@ -18,6 +19,7 @@ type GlobalChatStore = {
   chatStoreWriteQueue?: Promise<void>
 }
 
+const KV_KEY = 'chats'
 const globalStore = globalThis as typeof globalThis & GlobalChatStore
 
 function dataFile() {
@@ -28,21 +30,30 @@ function emptyStore(): ChatStoreData {
   return { conversations: {} }
 }
 
+function normalizeStore(input: unknown): ChatStoreData {
+  const parsed = input as ChatStoreData | null
+  if (!parsed?.conversations || typeof parsed.conversations !== 'object') {
+    return emptyStore()
+  }
+  return { conversations: parsed.conversations }
+}
+
 async function readFromDisk(): Promise<ChatStoreData> {
   const raw = await readTextFile(dataFile())
   if (!raw) return emptyStore()
   try {
-    const parsed = JSON.parse(raw) as ChatStoreData
-    if (!parsed?.conversations || typeof parsed.conversations !== 'object') {
-      return emptyStore()
-    }
-    return parsed
+    return normalizeStore(JSON.parse(raw))
   } catch {
     return emptyStore()
   }
 }
 
-async function ensureStore(): Promise<ChatStoreData> {
+async function loadStore(): Promise<ChatStoreData> {
+  if (hasDatabase()) {
+    const fromDb = await readKv<ChatStoreData>(KV_KEY)
+    return normalizeStore(fromDb)
+  }
+
   if (!globalStore.chatStoreData) {
     globalStore.chatStoreData = await readFromDisk()
   }
@@ -50,6 +61,13 @@ async function ensureStore(): Promise<ChatStoreData> {
 }
 
 async function persistStore(data: ChatStoreData) {
+  if (hasDatabase()) {
+    await writeKv(KV_KEY, data)
+    globalStore.chatStoreData = data
+    return
+  }
+
+  globalStore.chatStoreData = data
   const write = async () => {
     await writeTextFile(dataFile(), JSON.stringify(data, null, 2))
   }
@@ -76,14 +94,14 @@ function toSummary(conversation: Conversation): ConversationSummary {
 }
 
 export async function listConversations(): Promise<ConversationSummary[]> {
-  const store = await ensureStore()
+  const store = await loadStore()
   return Object.values(store.conversations)
     .map(toSummary)
     .sort((a, b) => b.updatedAt - a.updatedAt)
 }
 
 export async function getConversation(customerId: string): Promise<Conversation | null> {
-  const store = await ensureStore()
+  const store = await loadStore()
   return store.conversations[customerId] ?? null
 }
 
@@ -91,7 +109,7 @@ export async function ensureConversation(
   customerId: string,
   customerName: string,
 ): Promise<Conversation> {
-  const store = await ensureStore()
+  const store = await loadStore()
   const existing = store.conversations[customerId]
   if (existing) {
     if (existing.customerName !== customerName && customerName.trim()) {
@@ -128,7 +146,7 @@ export async function appendConversationMessage(
   options?: { fromAdmin?: boolean },
 ): Promise<Conversation> {
   const conversation = await ensureConversation(customerId, customerName)
-  const store = await ensureStore()
+  const store = await loadStore()
   const current = store.conversations[customerId] ?? conversation
 
   const nextMessage: ChatMessage = {
@@ -154,7 +172,7 @@ export async function appendConversationMessage(
 }
 
 export async function markConversationRead(customerId: string): Promise<Conversation | null> {
-  const store = await ensureStore()
+  const store = await loadStore()
   const conversation = store.conversations[customerId]
   if (!conversation) return null
   conversation.unreadByAdmin = 0
@@ -163,7 +181,7 @@ export async function markConversationRead(customerId: string): Promise<Conversa
 }
 
 export async function clearConversation(customerId: string): Promise<Conversation | null> {
-  const store = await ensureStore()
+  const store = await loadStore()
   const existing = store.conversations[customerId]
   if (!existing) return null
 
@@ -183,7 +201,7 @@ export async function clearConversation(customerId: string): Promise<Conversatio
 }
 
 export async function deleteConversation(customerId: string): Promise<boolean> {
-  const store = await ensureStore()
+  const store = await loadStore()
   if (!store.conversations[customerId]) return false
   delete store.conversations[customerId]
   await persistStore(store)
@@ -195,7 +213,7 @@ export async function updateHubSenderName(senderName: string): Promise<void> {
   const nextName = senderName.trim()
   if (!nextName) return
 
-  const store = await ensureStore()
+  const store = await loadStore()
   let changed = false
 
   for (const conversation of Object.values(store.conversations)) {

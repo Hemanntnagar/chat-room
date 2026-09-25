@@ -27,11 +27,16 @@ export async function GET(_request: Request, context: RouteContext) {
   }
 
   const originalName = decoded.replace(/^\d+-[a-f0-9]+-/, '')
-  return new Response(file.data, {
+  const contentType =
+    'mimeType' in file && typeof file.mimeType === 'string' && file.mimeType
+      ? file.mimeType
+      : guessContentType(decoded)
+
+  return new Response(new Uint8Array(file.data), {
     headers: {
-      'Content-Type': guessContentType(decoded),
+      'Content-Type': contentType,
       'Content-Disposition': `inline; filename="${originalName.replace(/"/g, '')}"`,
-      'Cache-Control': 'private, max-age=3600',
+      'Cache-Control': 'public, max-age=3600',
     },
   })
 }

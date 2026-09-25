@@ -1,5 +1,6 @@
 import path from 'node:path'
 import { HUB_NAME, type AdminProfile } from '@/lib/chat-messages'
+import { hasDatabase, readKv, writeKv } from '@/lib/db'
 import { getDataDir, readTextFile, writeTextFile } from '@/lib/runtime-fs'
 
 type GlobalAdminProfileStore = {
@@ -7,6 +8,7 @@ type GlobalAdminProfileStore = {
   adminProfileWriteQueue?: Promise<void>
 }
 
+const KV_KEY = 'admin-profile'
 const globalStore = globalThis as typeof globalThis & GlobalAdminProfileStore
 
 function dataFile() {
@@ -33,7 +35,12 @@ async function readFromDisk(): Promise<AdminProfile> {
   }
 }
 
-async function ensureProfile(): Promise<AdminProfile> {
+async function loadProfile(): Promise<AdminProfile> {
+  if (hasDatabase()) {
+    const fromDb = await readKv<AdminProfile>(KV_KEY)
+    return normalizeProfile(fromDb)
+  }
+
   if (!globalStore.adminProfileData) {
     globalStore.adminProfileData = await readFromDisk()
   }
@@ -41,6 +48,13 @@ async function ensureProfile(): Promise<AdminProfile> {
 }
 
 async function persistProfile(profile: AdminProfile) {
+  if (hasDatabase()) {
+    await writeKv(KV_KEY, profile)
+    globalStore.adminProfileData = profile
+    return
+  }
+
+  globalStore.adminProfileData = profile
   const write = async () => {
     await writeTextFile(dataFile(), JSON.stringify(profile, null, 2))
   }
@@ -55,19 +69,18 @@ async function persistProfile(profile: AdminProfile) {
 }
 
 export async function getAdminProfile(): Promise<AdminProfile> {
-  return ensureProfile()
+  return loadProfile()
 }
 
 export async function saveAdminProfile(
   input: Partial<AdminProfile>,
 ): Promise<AdminProfile> {
-  const current = await ensureProfile()
+  const current = await loadProfile()
   const next = normalizeProfile({
     name: input.name ?? current.name,
     imageUrl:
       input.imageUrl === undefined ? current.imageUrl : input.imageUrl,
   })
-  globalStore.adminProfileData = next
   await persistProfile(next)
   return next
 }
