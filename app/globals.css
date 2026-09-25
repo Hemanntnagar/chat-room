@@ -411,7 +411,11 @@ button { cursor: pointer; }
   color: #1fa855;
 }
 
-.message-body { padding-right: 4px; }
+.message-body {
+  padding-right: 4px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .message-body p { margin: 0; }
 .message-body p + p { margin-top: 8px; }
 
@@ -422,6 +426,15 @@ button { cursor: pointer; }
   word-break: break-all;
 }
 .chat-link:hover { text-decoration: underline; }
+
+.message-link {
+  color: #027eb5;
+  text-decoration: underline;
+  word-break: break-all;
+}
+.message-link:hover {
+  text-decoration: underline;
+}
 
 .message-meta {
   justify-content: flex-end;

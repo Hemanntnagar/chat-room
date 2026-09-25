@@ -15,6 +15,77 @@ function formatDuration(totalSeconds: number) {
   return `${minutes}:${String(seconds).padStart(2, '0')}`
 }
 
+/** Match http(s) and www. URLs in plain message text. */
+const URL_IN_TEXT =
+  /\b((?:https?:\/\/|www\.)[^\s<>"'`]+)/gi
+
+function trimTrailingPunctuation(value: string) {
+  let url = value
+  let trailing = ''
+  while (url.length > 0 && /[.,;:!?)]/.test(url[url.length - 1]!)) {
+    // Keep balanced closing paren if it was opened in the URL.
+    if (url.endsWith(')') && (url.match(/\(/g)?.length ?? 0) > (url.match(/\)/g)?.length ?? 0) - 1) {
+      break
+    }
+    trailing = `${url[url.length - 1]}${trailing}`
+    url = url.slice(0, -1)
+  }
+  return { url, trailing }
+}
+
+function toSafeHref(raw: string) {
+  const candidate = raw.toLowerCase().startsWith('www.') ? `https://${raw}` : raw
+  try {
+    const parsed = new URL(candidate)
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null
+    return parsed.href
+  } catch {
+    return null
+  }
+}
+
+function LinkifiedText({ text }: { text: string }) {
+  const nodes: React.ReactNode[] = []
+  let lastIndex = 0
+  let match: RegExpExecArray | null
+  const pattern = new RegExp(URL_IN_TEXT.source, URL_IN_TEXT.flags)
+
+  while ((match = pattern.exec(text)) !== null) {
+    const full = match[1] ?? match[0]
+    const start = match.index
+    if (start > lastIndex) {
+      nodes.push(text.slice(lastIndex, start))
+    }
+
+    const { url, trailing } = trimTrailingPunctuation(full)
+    const href = toSafeHref(url)
+    if (href) {
+      nodes.push(
+        <a
+          key={`link-${start}`}
+          href={href}
+          className="message-link"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          {url}
+        </a>,
+      )
+      if (trailing) nodes.push(trailing)
+    } else {
+      nodes.push(full)
+    }
+
+    lastIndex = start + full.length
+  }
+
+  if (lastIndex < text.length) {
+    nodes.push(text.slice(lastIndex))
+  }
+
+  return <>{nodes.length > 0 ? nodes : text}</>
+}
+
 export function Avatar({
   small = false,
   name,
@@ -188,7 +259,11 @@ function VoiceBubble({
         <span>{playing ? formatDuration(elapsed) : formatDuration(durationSec)}</span>
         <span>1x</span>
       </div>
-      {caption ? <p className="voice-caption">{caption}</p> : null}
+      {caption ? (
+        <p className="voice-caption">
+          <LinkifiedText text={caption} />
+        </p>
+      ) : null}
     </>
   )
 }
@@ -301,7 +376,9 @@ export function MessageBubble({
   if (message.type === 'system' || message.from === 'system') {
     return (
       <div className="system-message" role="status">
-        <span>{message.content}</span>
+        <span>
+          <LinkifiedText text={message.content} />
+        </span>
       </div>
     )
   }
@@ -344,7 +421,11 @@ export function MessageBubble({
           />
         ) : (
           <div className="message-body">
-            {message.preset ? <PresetBody preset={message.preset} /> : message.content}
+            {message.preset ? (
+              <PresetBody preset={message.preset} />
+            ) : (
+              <LinkifiedText text={message.content} />
+            )}
           </div>
         )}
         <div className="message-meta">
