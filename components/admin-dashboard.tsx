@@ -19,6 +19,7 @@ import {
   Mic,
   Paperclip,
   RefreshCw,
+  RotateCcw,
   Send,
   Shield,
   Smile,
@@ -1726,6 +1727,35 @@ export default function AdminDashboard() {
     await loadList()
   }
 
+  const handleDelete = async () => {
+    if (!active) return
+    if (
+      !window.confirm(
+        `Delete chat with ${active.customerName}? This removes it from your inbox.`,
+      )
+    ) {
+      return
+    }
+
+    const customerId = active.customerId
+    const response = await fetch(`/api/chats/${encodeURIComponent(customerId)}`, {
+      method: 'DELETE',
+    })
+    if (!response.ok) {
+      setError('Could not delete chat.')
+      return
+    }
+
+    setActive(null)
+    setSelectedId(null)
+    setError('')
+    if (isMobile) {
+      setSwipeX(0)
+      setPanelExiting(false)
+    }
+    await loadList()
+  }
+
   if (!ready) {
     return <main className="admin-shell admin-loading">Loading…</main>
   }
@@ -1927,13 +1957,24 @@ export default function AdminDashboard() {
                   <button
                     type="button"
                     className="save-chat-button"
-                    aria-label="Clear chat"
+                    aria-label="Reset chat"
                     onClick={() => {
                       void handleClear()
                     }}
                   >
+                    <RotateCcw size={18} />
+                    <span>Reset</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="save-chat-button admin-delete-chat"
+                    aria-label="Delete chat"
+                    onClick={() => {
+                      void handleDelete()
+                    }}
+                  >
                     <Trash2 size={18} />
-                    <span>Clear</span>
+                    <span>Delete</span>
                   </button>
                 </div>
               </div>

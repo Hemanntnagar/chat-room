@@ -811,6 +811,10 @@ button { cursor: pointer; }
   justify-content: flex-end;
 }
 
+.admin-delete-chat:hover {
+  background: rgba(234, 67, 53, 0.22);
+}
+
 @media (max-width: 640px) {
   .admin-chat-actions .save-chat-button span {
     display: none;
