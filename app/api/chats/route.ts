@@ -78,24 +78,26 @@ export async function POST(request: Request) {
   if (!fromAdmin && nextMessage.from === 'me' && nextMessage.type === 'text') {
     const auto = await findAutoReplyForMessage(nextMessage.content)
     if (auto) {
-      const autoAt = Date.now()
-      const autoMessage: ChatMessage = {
-        id: `auto-${autoAt}`,
-        from: 'them',
-        type: 'text',
-        senderName: auto.senderName,
-        content: auto.reply,
-        timestamp: formatTime(new Date(autoAt)),
-        status: 'sent',
-        createdAt: autoAt,
-        customerId,
+      for (let index = 0; index < auto.replies.length; index += 1) {
+        const autoAt = Date.now() + index
+        const autoMessage: ChatMessage = {
+          id: `auto-${autoAt}-${index}`,
+          from: 'them',
+          type: 'text',
+          senderName: auto.senderName,
+          content: auto.replies[index],
+          timestamp: formatTime(new Date(autoAt)),
+          status: 'sent',
+          createdAt: autoAt,
+          customerId,
+        }
+        conversation = await appendConversationMessage(
+          customerId,
+          customerName,
+          autoMessage,
+          { fromAdmin: true },
+        )
       }
-      conversation = await appendConversationMessage(
-        customerId,
-        customerName,
-        autoMessage,
-        { fromAdmin: true },
-      )
     }
   }
 

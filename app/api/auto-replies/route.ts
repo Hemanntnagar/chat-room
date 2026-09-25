@@ -18,7 +18,13 @@ export async function PUT(request: Request) {
 
   const payload = body as {
     senderName?: string
-    rules?: Array<Partial<AutoReplyRule> & { triggerId?: string }>
+    rules?: Array<
+      Partial<AutoReplyRule> & {
+        triggerId?: string
+        reply?: string
+        replies?: string[]
+      }
+    >
   }
 
   if (!Array.isArray(payload.rules)) {
@@ -28,7 +34,11 @@ export async function PUT(request: Request) {
   const rules = payload.rules.map((rule) => ({
     triggerId: rule.triggerId as CustomerQuickReplyId,
     triggerText: String(rule.triggerText ?? ''),
-    reply: String(rule.reply ?? ''),
+    replies: Array.isArray(rule.replies)
+      ? rule.replies.map((item) => String(item ?? ''))
+      : typeof rule.reply === 'string'
+        ? [rule.reply]
+        : [''],
     enabled: Boolean(rule.enabled),
   }))
 

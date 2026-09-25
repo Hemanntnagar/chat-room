@@ -1344,6 +1344,56 @@ button { cursor: pointer; }
   border-color: var(--wa-green);
 }
 
+.admin-auto-reply-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.admin-auto-reply-message-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #667781;
+}
+
+.admin-auto-reply-remove {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: #e35d6a;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.admin-auto-reply-remove:hover {
+  text-decoration: underline;
+}
+
+.admin-auto-reply-add {
+  align-self: flex-start;
+  border: 1px dashed #c5cdd3;
+  border-radius: 8px;
+  padding: 8px 12px;
+  background: #fff;
+  color: #008069;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.admin-auto-reply-add:hover {
+  border-color: #008069;
+  background: #f0faf7;
+}
+
 .admin-auto-reply-saved {
   margin: 0 0 8px;
   color: #008069;

@@ -55,7 +55,8 @@ export type CustomerQuickReplyId = (typeof CUSTOMER_QUICK_REPLIES)[number]['id']
 export type AutoReplyRule = {
   triggerId: CustomerQuickReplyId
   triggerText: string
-  reply: string
+  /** Ordered bot messages sent when this trigger matches. */
+  replies: string[]
   enabled: boolean
 }
 

@@ -15,6 +15,18 @@ type GlobalAutoReplyStore = {
   autoReplyWriteQueue?: Promise<void>
 }
 
+/** Older saved configs used a single `reply` string. */
+type LegacyAutoReplyRule = Partial<AutoReplyRule> & {
+  triggerId?: string
+  reply?: string
+  replies?: string[]
+}
+
+type LegacyAutoReplyConfig = {
+  senderName?: string
+  rules?: LegacyAutoReplyRule[]
+}
+
 const KV_KEY = 'auto-replies'
 const globalStore = globalThis as typeof globalThis & GlobalAutoReplyStore
 
@@ -26,12 +38,25 @@ function defaultRules(): AutoReplyRule[] {
   return CUSTOMER_QUICK_REPLIES.map((item) => ({
     triggerId: item.id,
     triggerText: item.text,
-    reply: '',
+    replies: [''],
     enabled: false,
   }))
 }
 
-function normalizeConfig(input?: Partial<AutoReplyConfig> | null): AutoReplyConfig {
+function normalizeReplies(rule?: LegacyAutoReplyRule | null): string[] {
+  const fromList = (rule?.replies ?? [])
+    .map((item) => String(item ?? ''))
+    .filter((item, index, list) => item.trim() || index === 0)
+
+  if (fromList.length > 0) return fromList
+
+  const legacy = rule?.reply
+  if (typeof legacy === 'string') return [legacy]
+
+  return ['']
+}
+
+function normalizeConfig(input?: LegacyAutoReplyConfig | null): AutoReplyConfig {
   const byId = new Map(
     (input?.rules ?? []).map((rule) => [rule.triggerId, rule] as const),
   )
@@ -40,11 +65,13 @@ function normalizeConfig(input?: Partial<AutoReplyConfig> | null): AutoReplyConf
     senderName: input?.senderName?.trim() || HUB_NAME,
     rules: CUSTOMER_QUICK_REPLIES.map((item) => {
       const existing = byId.get(item.id)
+      const replies = normalizeReplies(existing)
+      const hasContent = replies.some((reply) => reply.trim())
       return {
         triggerId: item.id,
         triggerText: item.text,
-        reply: existing?.reply?.trim() ?? '',
-        enabled: Boolean(existing?.enabled && existing.reply?.trim()),
+        replies,
+        enabled: Boolean(existing?.enabled && hasContent),
       }
     }),
   }
@@ -54,7 +81,7 @@ async function readFromDisk(): Promise<AutoReplyConfig> {
   const raw = await readTextFile(dataFile())
   if (!raw) return normalizeConfig()
   try {
-    return normalizeConfig(JSON.parse(raw) as AutoReplyConfig)
+    return normalizeConfig(JSON.parse(raw) as LegacyAutoReplyConfig)
   } catch {
     return normalizeConfig()
   }
@@ -62,7 +89,7 @@ async function readFromDisk(): Promise<AutoReplyConfig> {
 
 async function loadConfig(): Promise<AutoReplyConfig> {
   if (hasDatabase()) {
-    const fromDb = await readKv<AutoReplyConfig>(KV_KEY)
+    const fromDb = await readKv<LegacyAutoReplyConfig>(KV_KEY)
     return normalizeConfig(fromDb)
   }
 
@@ -98,14 +125,15 @@ export async function getAutoReplyConfig(): Promise<AutoReplyConfig> {
 }
 
 export async function saveAutoReplyConfig(
-  input: Partial<AutoReplyConfig>,
+  input: Partial<AutoReplyConfig> & { rules?: LegacyAutoReplyRule[] },
 ): Promise<AutoReplyConfig> {
+  const existing = await loadConfig()
   const next = normalizeConfig({
-    senderName: input.senderName,
-    rules: (input.rules ?? defaultRules()).map((rule) => ({
+    senderName: input.senderName ?? existing.senderName,
+    rules: (input.rules ?? existing.rules).map((rule) => ({
       triggerId: rule.triggerId as CustomerQuickReplyId,
       triggerText: rule.triggerText,
-      reply: rule.reply,
+      replies: normalizeReplies(rule),
       enabled: rule.enabled,
     })),
   })
@@ -115,7 +143,7 @@ export async function saveAutoReplyConfig(
 
 export async function findAutoReplyForMessage(
   content: string,
-): Promise<{ reply: string; senderName: string } | null> {
+): Promise<{ replies: string[]; senderName: string } | null> {
   const normalized = content.trim().toLowerCase()
   if (!normalized) return null
 
@@ -123,7 +151,7 @@ export async function findAutoReplyForMessage(
   const match = config.rules.find(
     (rule) =>
       rule.enabled &&
-      rule.reply.trim() &&
+      rule.replies.some((reply) => reply.trim()) &&
       rule.triggerText.trim().toLowerCase() === normalized,
   )
 
@@ -131,7 +159,7 @@ export async function findAutoReplyForMessage(
 
   const profile = await getAdminProfile()
   return {
-    reply: match.reply.trim(),
+    replies: match.replies.map((reply) => reply.trim()).filter(Boolean),
     senderName: profile.name || config.senderName,
   }
 }
