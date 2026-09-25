@@ -1005,6 +1005,16 @@ function AdminAutoSetPanel({ onClose }: { onClose: () => void }) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [savedNote, setSavedNote] = useState('')
+  const [recording, setRecording] = useState(false)
+  const [recordSeconds, setRecordSeconds] = useState(0)
+  const [recordError, setRecordError] = useState('')
+  const [uploadingVoice, setUploadingVoice] = useState(false)
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const mediaStreamRef = useRef<MediaStream | null>(null)
+  const chunksRef = useRef<BlobPart[]>([])
+  const startedAtRef = useRef(0)
+  const timerRef = useRef<number | null>(null)
+  const shouldKeepRef = useRef(false)
 
   useEffect(() => {
     let cancelled = false
@@ -1013,7 +1023,11 @@ function AdminAutoSetPanel({ onClose }: { onClose: () => void }) {
         if (!response.ok) throw new Error('Failed to load')
         const data = (await response.json()) as { messages: AutoSetMessages }
         if (!cancelled && data.messages) {
-          setDraft(data.messages)
+          setDraft({
+            ...DEFAULT_AUTO_SET_MESSAGES,
+            ...data.messages,
+            voiceAudioUrl: data.messages.voiceAudioUrl ?? null,
+          })
           setError('')
         }
       })
@@ -1028,9 +1042,136 @@ function AdminAutoSetPanel({ onClose }: { onClose: () => void }) {
     }
   }, [])
 
+  const clearTimer = () => {
+    if (timerRef.current !== null) {
+      window.clearInterval(timerRef.current)
+      timerRef.current = null
+    }
+  }
+
+  const stopStream = () => {
+    mediaStreamRef.current?.getTracks().forEach((track) => track.stop())
+    mediaStreamRef.current = null
+  }
+
+  const resetRecordingState = () => {
+    clearTimer()
+    setRecording(false)
+    setRecordSeconds(0)
+    mediaRecorderRef.current = null
+    chunksRef.current = []
+    shouldKeepRef.current = false
+  }
+
+  useEffect(() => {
+    return () => {
+      clearTimer()
+      if (mediaRecorderRef.current?.state === 'recording') {
+        mediaRecorderRef.current.stop()
+      }
+      stopStream()
+    }
+  }, [])
+
   const updateField = <K extends keyof AutoSetMessages>(key: K, value: AutoSetMessages[K]) => {
     setDraft((current) => ({ ...current, [key]: value }))
     setSavedNote('')
+  }
+
+  const finishRecording = (keep: boolean) => {
+    const recorder = mediaRecorderRef.current
+    if (!recorder || recorder.state === 'inactive') {
+      resetRecordingState()
+      stopStream()
+      return
+    }
+    shouldKeepRef.current = keep
+    recorder.stop()
+  }
+
+  const startRecording = async () => {
+    if (recording || uploadingVoice) return
+    setRecordError('')
+    setSavedNote('')
+
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      setRecordError('Voice recording is not supported in this browser.')
+      return
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      mediaStreamRef.current = stream
+      const mimeType = pickAudioMimeType()
+      const recorder = mimeType
+        ? new MediaRecorder(stream, { mimeType })
+        : new MediaRecorder(stream)
+
+      chunksRef.current = []
+      mediaRecorderRef.current = recorder
+      startedAtRef.current = Date.now()
+      shouldKeepRef.current = false
+
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) chunksRef.current.push(event.data)
+      }
+
+      recorder.onstop = () => {
+        const durationSec = Math.max(1, Math.round((Date.now() - startedAtRef.current) / 1000))
+        const keep = shouldKeepRef.current
+        const blobType = recorder.mimeType || mimeType || 'audio/webm'
+        const blob = new Blob(chunksRef.current, { type: blobType })
+        stopStream()
+        resetRecordingState()
+
+        if (!keep || blob.size === 0) return
+
+        const extension = blobType.includes('mp4')
+          ? 'm4a'
+          : blobType.includes('ogg')
+            ? 'ogg'
+            : 'webm'
+        const file = new File([blob], `auto-set-voice.${extension}`, { type: blobType })
+        setUploadingVoice(true)
+        setRecordError('')
+        void uploadChatFile(file)
+          .then((uploaded) => {
+            setDraft((current) => ({
+              ...current,
+              voiceAudioUrl: uploaded.fileUrl,
+              voiceDurationSec: durationSec,
+            }))
+            setSavedNote('')
+          })
+          .catch((uploadError: unknown) => {
+            setRecordError(
+              uploadError instanceof Error
+                ? uploadError.message
+                : 'Could not upload that recording. Try again.',
+            )
+          })
+          .finally(() => {
+            setUploadingVoice(false)
+          })
+      }
+
+      recorder.start(250)
+      setRecording(true)
+      setRecordSeconds(0)
+      timerRef.current = window.setInterval(() => {
+        setRecordSeconds(Math.floor((Date.now() - startedAtRef.current) / 1000))
+      }, 250)
+    } catch {
+      stopStream()
+      resetRecordingState()
+      setRecordError('Microphone access is needed to record the voice greeting.')
+    }
+  }
+
+  const clearRecording = () => {
+    updateField('voiceAudioUrl', null)
+    updateField('voiceDurationSec', DEFAULT_AUTO_SET_MESSAGES.voiceDurationSec)
+    setRecordError('')
   }
 
   const save = async () => {
@@ -1045,7 +1186,11 @@ function AdminAutoSetPanel({ onClose }: { onClose: () => void }) {
       })
       if (!response.ok) throw new Error('save failed')
       const data = (await response.json()) as { messages: AutoSetMessages }
-      setDraft(data.messages)
+      setDraft({
+        ...DEFAULT_AUTO_SET_MESSAGES,
+        ...data.messages,
+        voiceAudioUrl: data.messages.voiceAudioUrl ?? null,
+      })
       setSavedNote('Auto-set messages saved. New chats will use them.')
     } catch {
       setError('Could not save auto-set messages. Try again.')
@@ -1118,25 +1263,82 @@ function AdminAutoSetPanel({ onClose }: { onClose: () => void }) {
             <div className="admin-auto-reply-card">
               <div className="admin-auto-reply-card-top">
                 <strong>Voice greeting</strong>
+                <span>{formatDuration(draft.voiceDurationSec)}</span>
               </div>
+
+              {recording ? (
+                <div className="admin-auto-set-recorder recording-bar" role="status" aria-live="polite">
+                  <button
+                    type="button"
+                    className="composer-icon record-cancel"
+                    aria-label="Cancel recording"
+                    onClick={() => finishRecording(false)}
+                  >
+                    <Trash2 size={20} />
+                  </button>
+                  <div className="recording-status">
+                    <span className="recording-dot" />
+                    <span className="recording-timer">{formatDuration(recordSeconds)}</span>
+                    <span className="recording-label">Recording…</span>
+                  </div>
+                  <button
+                    type="button"
+                    aria-label="Save recording"
+                    className="send-button send-button-visible"
+                    onClick={() => finishRecording(true)}
+                  >
+                    <Send size={18} />
+                  </button>
+                </div>
+              ) : (
+                <div className="admin-auto-set-recorder-actions">
+                  {draft.voiceAudioUrl ? (
+                    <audio
+                      className="admin-auto-set-audio"
+                      controls
+                      src={draft.voiceAudioUrl}
+                      preload="metadata"
+                    />
+                  ) : (
+                    <p className="admin-auto-reply-status">
+                      No recording yet — tap record to capture the greeting.
+                    </p>
+                  )}
+                  <div className="admin-auto-set-recorder-buttons">
+                    <button
+                      type="button"
+                      className="admin-auto-reply-add admin-auto-reply-add-secondary"
+                      disabled={uploadingVoice}
+                      onClick={() => void startRecording()}
+                    >
+                      <Mic size={16} />
+                      {draft.voiceAudioUrl ? 'Re-record' : 'Record'}
+                    </button>
+                    {draft.voiceAudioUrl ? (
+                      <button
+                        type="button"
+                        className="admin-auto-reply-remove"
+                        disabled={uploadingVoice}
+                        onClick={clearRecording}
+                      >
+                        Remove
+                      </button>
+                    ) : null}
+                  </div>
+                  {uploadingVoice ? (
+                    <p className="admin-auto-reply-status">Uploading recording…</p>
+                  ) : null}
+                </div>
+              )}
+
+              {recordError ? <p className="admin-error">{recordError}</p> : null}
+
               <label className="admin-auto-reply-field">
-                <span>Caption text</span>
+                <span>Caption text (shown if no audio)</span>
                 <input
                   type="text"
                   value={draft.voiceText}
                   onChange={(event) => updateField('voiceText', event.target.value)}
-                />
-              </label>
-              <label className="admin-auto-reply-field">
-                <span>Duration (seconds)</span>
-                <input
-                  type="number"
-                  min={1}
-                  max={120}
-                  value={draft.voiceDurationSec}
-                  onChange={(event) =>
-                    updateField('voiceDurationSec', Number(event.target.value) || 1)
-                  }
                 />
               </label>
             </div>
@@ -1150,7 +1352,11 @@ function AdminAutoSetPanel({ onClose }: { onClose: () => void }) {
           <button type="button" className="admin-profile-secondary" onClick={onClose}>
             Close
           </button>
-          <button type="button" disabled={loading || saving} onClick={() => void save()}>
+          <button
+            type="button"
+            disabled={loading || saving || recording || uploadingVoice}
+            onClick={() => void save()}
+          >
             {saving ? 'Saving…' : 'Save auto-set messages'}
           </button>
         </div>

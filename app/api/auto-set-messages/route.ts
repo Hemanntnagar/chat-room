@@ -28,6 +28,12 @@ export async function PUT(request: Request) {
         : typeof payload.voiceDurationSec === 'string'
           ? Number(payload.voiceDurationSec)
           : undefined,
+    voiceAudioUrl:
+      payload.voiceAudioUrl === null
+        ? null
+        : typeof payload.voiceAudioUrl === 'string'
+          ? payload.voiceAudioUrl
+          : undefined,
   })
 
   return Response.json({ messages })

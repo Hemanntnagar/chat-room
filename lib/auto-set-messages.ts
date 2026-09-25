@@ -35,12 +35,17 @@ function normalizeConfig(input?: Partial<AutoSetMessages> | null): AutoSetMessag
   const voiceDurationSec = Number.isFinite(rawDuration)
     ? Math.max(1, Math.min(120, Math.round(rawDuration)))
     : DEFAULT_AUTO_SET_MESSAGES.voiceDurationSec
+  const voiceAudioUrl =
+    typeof input?.voiceAudioUrl === 'string' && input.voiceAudioUrl.trim()
+      ? input.voiceAudioUrl.trim()
+      : null
 
   return {
     linksText,
     welcomeText,
     voiceText,
     voiceDurationSec,
+    voiceAudioUrl,
   }
 }
 
@@ -103,6 +108,8 @@ export async function saveAutoSetMessages(
       input.voiceDurationSec === undefined
         ? existing.voiceDurationSec
         : input.voiceDurationSec,
+    voiceAudioUrl:
+      input.voiceAudioUrl === undefined ? existing.voiceAudioUrl : input.voiceAudioUrl,
   })
   await persistConfig(next)
   return next

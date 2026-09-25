@@ -80,6 +80,8 @@ export type AutoSetMessages = {
   welcomeText: string
   voiceText: string
   voiceDurationSec: number
+  /** Uploaded / stored audio URL for the greeting voice bubble. */
+  voiceAudioUrl: string | null
 }
 
 export type AdminProfile = {
@@ -109,6 +111,7 @@ export const DEFAULT_AUTO_SET_MESSAGES: AutoSetMessages = {
   ].join('\n'),
   voiceText: 'Hello sir, Me apki kya help kr skti hu?',
   voiceDurationSec: 4,
+  voiceAudioUrl: null,
 }
 
 export function buildSeedMessages(
@@ -121,6 +124,10 @@ export function buildSeedMessages(
     1,
     Math.min(120, Math.round(autoSet.voiceDurationSec) || DEFAULT_AUTO_SET_MESSAGES.voiceDurationSec),
   )
+  const voiceAudioUrl =
+    typeof autoSet.voiceAudioUrl === 'string' && autoSet.voiceAudioUrl.trim()
+      ? autoSet.voiceAudioUrl.trim()
+      : undefined
 
   return [
     {
@@ -151,6 +158,7 @@ export function buildSeedMessages(
       timestamp: '12:03',
       createdAt: 2,
       content: voiceText,
+      ...(voiceAudioUrl ? { audioUrl: voiceAudioUrl } : {}),
     },
   ]
 }
