@@ -421,7 +421,9 @@ export function MessageBubble({
           />
         ) : (
           <div className="message-body">
-            {message.preset ? (
+            {message.preset &&
+            (message.content === 'Promo links and demo IDs' ||
+              message.content === 'You can chat here or connect via WhatsApp') ? (
               <PresetBody preset={message.preset} />
             ) : (
               <LinkifiedText text={message.content} />

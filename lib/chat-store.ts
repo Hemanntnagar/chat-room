@@ -1,5 +1,6 @@
 import path from 'node:path'
 import { getAdminProfile } from '@/lib/admin-profile'
+import { getAutoSetMessages } from '@/lib/auto-set-messages'
 import {
   type ChatMessage,
   type Conversation,
@@ -121,7 +122,10 @@ export async function ensureConversation(
   }
 
   const now = Date.now()
-  const hubProfile = await getAdminProfile()
+  const [hubProfile, autoSet] = await Promise.all([
+    getAdminProfile(),
+    getAutoSetMessages(),
+  ])
   const conversation: Conversation = {
     customerId,
     customerName: customerName.trim() || 'Guest',
@@ -132,6 +136,7 @@ export async function ensureConversation(
       customerId,
       customerName.trim() || 'Guest',
       hubProfile.name,
+      autoSet,
     ),
   }
   store.conversations[customerId] = conversation
@@ -186,14 +191,22 @@ export async function clearConversation(customerId: string): Promise<Conversatio
   if (!existing) return null
 
   const now = Date.now()
-  const hubProfile = await getAdminProfile()
+  const [hubProfile, autoSet] = await Promise.all([
+    getAdminProfile(),
+    getAutoSetMessages(),
+  ])
   const conversation: Conversation = {
     customerId,
     customerName: existing.customerName,
     createdAt: existing.createdAt,
     updatedAt: now,
     unreadByAdmin: 0,
-    messages: withCustomerSeed(customerId, existing.customerName, hubProfile.name),
+    messages: withCustomerSeed(
+      customerId,
+      existing.customerName,
+      hubProfile.name,
+      autoSet,
+    ),
   }
   store.conversations[customerId] = conversation
   await persistStore(store)

@@ -15,6 +15,7 @@ import {
   Camera,
   LogOut,
   MessageSquare,
+  MessageSquareText,
   Mic,
   Paperclip,
   RefreshCw,
@@ -31,11 +32,13 @@ import {
   type AdminProfile,
   type AutoReplyConfig,
   type AutoReplyRule,
+  type AutoSetMessages,
   type ChatMessage,
   type Conversation,
   type ConversationSummary,
   ADMIN_PASSWORD,
   CUSTOMER_QUICK_REPLIES,
+  DEFAULT_AUTO_SET_MESSAGES,
   HUB_NAME,
   formatTime,
   isAdminAuthenticated,
@@ -996,6 +999,166 @@ function AdminAutoReplyPanel({
   )
 }
 
+function AdminAutoSetPanel({ onClose }: { onClose: () => void }) {
+  const [draft, setDraft] = useState<AutoSetMessages>(DEFAULT_AUTO_SET_MESSAGES)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [savedNote, setSavedNote] = useState('')
+
+  useEffect(() => {
+    let cancelled = false
+    void fetch('/api/auto-set-messages', { cache: 'no-store' })
+      .then(async (response) => {
+        if (!response.ok) throw new Error('Failed to load')
+        const data = (await response.json()) as { messages: AutoSetMessages }
+        if (!cancelled && data.messages) {
+          setDraft(data.messages)
+          setError('')
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setError('Could not load auto-set messages.')
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const updateField = <K extends keyof AutoSetMessages>(key: K, value: AutoSetMessages[K]) => {
+    setDraft((current) => ({ ...current, [key]: value }))
+    setSavedNote('')
+  }
+
+  const save = async () => {
+    setSaving(true)
+    setError('')
+    setSavedNote('')
+    try {
+      const response = await fetch('/api/auto-set-messages', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(draft),
+      })
+      if (!response.ok) throw new Error('save failed')
+      const data = (await response.json()) as { messages: AutoSetMessages }
+      setDraft(data.messages)
+      setSavedNote('Auto-set messages saved. New chats will use them.')
+    } catch {
+      setError('Could not save auto-set messages. Try again.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="admin-profile-overlay" role="presentation" onClick={onClose}>
+      <section
+        className="admin-profile-panel admin-auto-reply-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="admin-auto-set-title"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="admin-profile-header">
+          <div>
+            <h2 id="admin-auto-set-title">Auto-set messages</h2>
+            <p>
+              These messages are posted automatically when a customer starts a chat. URLs become
+              clickable links.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="icon-button"
+            aria-label="Close auto-set messages"
+            onClick={onClose}
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        {loading ? (
+          <p className="admin-auto-reply-status">Loading…</p>
+        ) : (
+          <div className="admin-auto-reply-list">
+            <div className="admin-auto-reply-card">
+              <div className="admin-auto-reply-card-top">
+                <strong>Promo / links message</strong>
+              </div>
+              <label className="sr-only" htmlFor="auto-set-links">
+                Promo links message
+              </label>
+              <textarea
+                id="auto-set-links"
+                rows={10}
+                value={draft.linksText}
+                onChange={(event) => updateField('linksText', event.target.value)}
+              />
+            </div>
+
+            <div className="admin-auto-reply-card">
+              <div className="admin-auto-reply-card-top">
+                <strong>Welcome message</strong>
+              </div>
+              <label className="sr-only" htmlFor="auto-set-welcome">
+                Welcome message
+              </label>
+              <textarea
+                id="auto-set-welcome"
+                rows={6}
+                value={draft.welcomeText}
+                onChange={(event) => updateField('welcomeText', event.target.value)}
+              />
+            </div>
+
+            <div className="admin-auto-reply-card">
+              <div className="admin-auto-reply-card-top">
+                <strong>Voice greeting</strong>
+              </div>
+              <label className="admin-auto-reply-field">
+                <span>Caption text</span>
+                <input
+                  type="text"
+                  value={draft.voiceText}
+                  onChange={(event) => updateField('voiceText', event.target.value)}
+                />
+              </label>
+              <label className="admin-auto-reply-field">
+                <span>Duration (seconds)</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={120}
+                  value={draft.voiceDurationSec}
+                  onChange={(event) =>
+                    updateField('voiceDurationSec', Number(event.target.value) || 1)
+                  }
+                />
+              </label>
+            </div>
+          </div>
+        )}
+
+        {error ? <p className="admin-error">{error}</p> : null}
+        {savedNote ? <p className="admin-auto-reply-saved">{savedNote}</p> : null}
+
+        <div className="admin-profile-actions">
+          <button type="button" className="admin-profile-secondary" onClick={onClose}>
+            Close
+          </button>
+          <button type="button" disabled={loading || saving} onClick={() => void save()}>
+            {saving ? 'Saving…' : 'Save auto-set messages'}
+          </button>
+        </div>
+      </section>
+    </div>
+  )
+}
+
 const MOBILE_INBOX_MQ = '(max-width: 860px)'
 const SWIPE_BACK_RATIO = 0.28
 const SWIPE_BACK_PX = 72
@@ -1012,6 +1175,7 @@ export default function AdminDashboard() {
   })
   const [showProfile, setShowProfile] = useState(false)
   const [showAutoReplies, setShowAutoReplies] = useState(false)
+  const [showAutoSet, setShowAutoSet] = useState(false)
   const [conversations, setConversations] = useState<ConversationSummary[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [active, setActive] = useState<Conversation | null>(null)
@@ -1391,6 +1555,7 @@ export default function AdminDashboard() {
           onClose={() => setShowAutoReplies(false)}
         />
       ) : null}
+      {showAutoSet ? <AdminAutoSetPanel onClose={() => setShowAutoSet(false)} /> : null}
       <section
         className={`admin-inbox ${isMobile ? (mobileShowingThread ? 'admin-inbox-mobile-thread' : 'admin-inbox-mobile-list') : ''}`}
         aria-label="Admin customer inbox"
@@ -1415,6 +1580,14 @@ export default function AdminDashboard() {
               </div>
             </div>
             <div className="admin-sidebar-actions">
+              <button
+                type="button"
+                className="icon-button"
+                aria-label="Auto-set messages"
+                onClick={() => setShowAutoSet(true)}
+              >
+                <MessageSquareText size={18} />
+              </button>
               <button
                 type="button"
                 className="icon-button"

@@ -74,44 +74,89 @@ export type AutoReplyConfig = {
   rules: AutoReplyRule[]
 }
 
+/** Opening messages posted when a customer chat is created or cleared. */
+export type AutoSetMessages = {
+  linksText: string
+  welcomeText: string
+  voiceText: string
+  voiceDurationSec: number
+}
+
 export type AdminProfile = {
   name: string
   imageUrl: string | null
 }
 
-export const SEED_MESSAGES: ChatMessage[] = [
-  {
-    id: 'links',
-    from: 'them',
-    type: 'text',
-    senderName: HUB_NAME,
-    timestamp: '12:03',
-    createdAt: 0,
-    content: 'Promo links and demo IDs',
-    preset: 'links',
-  },
-  {
-    id: 'welcome',
-    from: 'them',
-    type: 'text',
-    senderName: HUB_NAME,
-    timestamp: '12:03',
-    createdAt: 1,
-    content: 'You can chat here or connect via WhatsApp',
-    preset: 'welcome',
-  },
-  {
-    id: 'voice',
-    from: 'them',
-    type: 'voice',
-    senderName: HUB_NAME,
-    text: 'Hello sir, Me apki kya help kr skti hu?',
-    durationSec: 4,
-    timestamp: '12:03',
-    createdAt: 2,
-    content: 'Hello sir, Me apki kya help kr skti hu?',
-  },
-]
+export const DEFAULT_AUTO_SET_MESSAGES: AutoSetMessages = {
+  linksText: [
+    'https://777.us',
+    'https://Cricxbet99.xyz',
+    'https://9wicket.com',
+    'https://gold.365.run',
+    '(FOR DEMO Id - Just click on LOGIN WITH DEMO on our sites)👍',
+    '',
+    '♆ Profit Online HUB ♆',
+    '╰┈➤ 🙏 HAPPY GAMING 🙏 ╰┈➤',
+    '',
+    '🚦FAST WITHDRAWALWITH IN 10 MINUTES 🚦',
+  ].join('\n'),
+  welcomeText: [
+    '💬 You can chat here or click the WhatsApp button above to connect directly.',
+    '',
+    'आप यहाँ चैट कर सकते हैं या ऊपर दिए WhatsApp button पर क्लिक करके सीधे जुड़ सकते हैं।',
+    '',
+    'https://bio.wa.link/profit',
+  ].join('\n'),
+  voiceText: 'Hello sir, Me apki kya help kr skti hu?',
+  voiceDurationSec: 4,
+}
+
+export function buildSeedMessages(
+  autoSet: AutoSetMessages = DEFAULT_AUTO_SET_MESSAGES,
+): ChatMessage[] {
+  const linksText = autoSet.linksText.trim() || DEFAULT_AUTO_SET_MESSAGES.linksText
+  const welcomeText = autoSet.welcomeText.trim() || DEFAULT_AUTO_SET_MESSAGES.welcomeText
+  const voiceText = autoSet.voiceText.trim() || DEFAULT_AUTO_SET_MESSAGES.voiceText
+  const voiceDurationSec = Math.max(
+    1,
+    Math.min(120, Math.round(autoSet.voiceDurationSec) || DEFAULT_AUTO_SET_MESSAGES.voiceDurationSec),
+  )
+
+  return [
+    {
+      id: 'links',
+      from: 'them',
+      type: 'text',
+      senderName: HUB_NAME,
+      timestamp: '12:03',
+      createdAt: 0,
+      content: linksText,
+    },
+    {
+      id: 'welcome',
+      from: 'them',
+      type: 'text',
+      senderName: HUB_NAME,
+      timestamp: '12:03',
+      createdAt: 1,
+      content: welcomeText,
+    },
+    {
+      id: 'voice',
+      from: 'them',
+      type: 'voice',
+      senderName: HUB_NAME,
+      text: voiceText,
+      durationSec: voiceDurationSec,
+      timestamp: '12:03',
+      createdAt: 2,
+      content: voiceText,
+    },
+  ]
+}
+
+/** @deprecated Prefer buildSeedMessages — kept for callers that expect a static list. */
+export const SEED_MESSAGES: ChatMessage[] = buildSeedMessages()
 
 export function formatTime(date = new Date()) {
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
@@ -141,11 +186,13 @@ export function withCustomerSeed(
   customerId: string,
   customerName: string,
   hubName = HUB_NAME,
+  autoSet: AutoSetMessages = DEFAULT_AUTO_SET_MESSAGES,
 ): ChatMessage[] {
   const now = Date.now()
   const senderName = hubName.trim() || HUB_NAME
+  const seedMessages = buildSeedMessages(autoSet)
   return [
-    ...SEED_MESSAGES.map((message, index) => ({
+    ...seedMessages.map((message, index) => ({
       ...message,
       id: `${customerId}-${message.id}`,
       customerId,
@@ -158,7 +205,7 @@ export function withCustomerSeed(
       type: 'system',
       content: `${customerName} joined the chat`,
       timestamp: formatTime(),
-      createdAt: now + SEED_MESSAGES.length,
+      createdAt: now + seedMessages.length,
       customerId,
     },
   ]
