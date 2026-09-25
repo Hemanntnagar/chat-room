@@ -1,5 +1,6 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
+import { getAdminProfile } from '@/lib/admin-profile'
 import {
   type ChatMessage,
   type Conversation,
@@ -100,13 +101,18 @@ export async function ensureConversation(
   }
 
   const now = Date.now()
+  const hubProfile = await getAdminProfile()
   const conversation: Conversation = {
     customerId,
     customerName: customerName.trim() || 'Guest',
     createdAt: now,
     updatedAt: now,
     unreadByAdmin: 0,
-    messages: withCustomerSeed(customerId, customerName.trim() || 'Guest'),
+    messages: withCustomerSeed(
+      customerId,
+      customerName.trim() || 'Guest',
+      hubProfile.name,
+    ),
   }
   store.conversations[customerId] = conversation
   await persistStore(store)
@@ -160,13 +166,14 @@ export async function clearConversation(customerId: string): Promise<Conversatio
   if (!existing) return null
 
   const now = Date.now()
+  const hubProfile = await getAdminProfile()
   const conversation: Conversation = {
     customerId,
     customerName: existing.customerName,
     createdAt: existing.createdAt,
     updatedAt: now,
     unreadByAdmin: 0,
-    messages: withCustomerSeed(customerId, existing.customerName),
+    messages: withCustomerSeed(customerId, existing.customerName, hubProfile.name),
   }
   store.conversations[customerId] = conversation
   await persistStore(store)
@@ -179,4 +186,31 @@ export async function deleteConversation(customerId: string): Promise<boolean> {
   delete store.conversations[customerId]
   await persistStore(store)
   return true
+}
+
+/** Keep stored hub message labels in sync when the admin display name changes. */
+export async function updateHubSenderName(senderName: string): Promise<void> {
+  const nextName = senderName.trim()
+  if (!nextName) return
+
+  const store = await ensureStore()
+  let changed = false
+
+  for (const conversation of Object.values(store.conversations)) {
+    let conversationChanged = false
+    conversation.messages = conversation.messages.map((message) => {
+      if (message.from !== 'them') return message
+      if (message.senderName === nextName) return message
+      conversationChanged = true
+      return { ...message, senderName: nextName }
+    })
+    if (conversationChanged) {
+      changed = true
+      conversation.updatedAt = Date.now()
+    }
+  }
+
+  if (changed) {
+    await persistStore(store)
+  }
 }

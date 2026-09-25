@@ -37,14 +37,34 @@ export function Avatar({
     )
   }
 
+  // Default brand mark when the hub still uses the original name.
+  if (label === HUB_NAME) {
+    return (
+      <div
+        className={`profile-avatar ${small ? 'profile-avatar-small' : ''}`}
+        aria-label={`${label} avatar`}
+      >
+        <span>Profit</span>
+        <strong>ONLINE</strong>
+        <small>HUB</small>
+      </div>
+    )
+  }
+
+  // Custom display names show initials everywhere (header + message list).
+  const parts = label.split(/\s+/).filter(Boolean)
+  const initials =
+    parts.length >= 2
+      ? `${parts[0]![0] ?? ''}${parts[1]![0] ?? ''}`.toUpperCase()
+      : label.slice(0, 2).toUpperCase()
+
   return (
     <div
-      className={`profile-avatar ${small ? 'profile-avatar-small' : ''}`}
+      className={`profile-avatar profile-avatar-initials ${small ? 'profile-avatar-small' : ''}`}
       aria-label={`${label} avatar`}
+      title={label}
     >
-      <span>Profit</span>
-      <strong>ONLINE</strong>
-      <small>HUB</small>
+      <span>{initials}</span>
     </div>
   )
 }
@@ -281,8 +301,9 @@ export function MessageBubble({
   }
 
   const outgoing = perspective === 'admin' ? message.from === 'them' : message.from === 'me'
-  const hubName = hubProfile?.name?.trim() || HUB_NAME
   const isHubMessage = message.from === 'them'
+  const hubName =
+    hubProfile?.name?.trim() || message.senderName?.trim() || HUB_NAME
   const displayName = isHubMessage
     ? hubName
     : message.senderName ?? (perspective === 'admin' ? 'Guest' : 'You')

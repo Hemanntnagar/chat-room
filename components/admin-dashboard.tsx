@@ -429,6 +429,23 @@ function formatRelative(updatedAt: number) {
   return new Date(updatedAt).toLocaleDateString()
 }
 
+async function persistAdminProfile(name: string, imageUrl: string | null) {
+  const response = await fetch('/api/admin-profile', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, imageUrl }),
+  })
+  if (!response.ok) throw new Error('save failed')
+  const data = (await response.json()) as { profile: AdminProfile }
+  return data.profile
+}
+
+function isImageFile(file: File) {
+  if (file.type.startsWith('image/')) return true
+  // Some OS/browsers leave type empty for local photos.
+  return /\.(jpe?g|png|gif|webp|bmp|heic|heif|avif)$/i.test(file.name)
+}
+
 function AdminProfilePanel({
   profile,
   onSave,
@@ -451,23 +468,66 @@ function AdminProfilePanel({
     setError('')
   }, [profile])
 
+  const openPhotoPicker = () => {
+    if (uploading || saving) return
+    const input = fileInputRef.current
+    if (!input) return
+    input.value = ''
+    input.click()
+  }
+
+  const saveProfile = async (nextName: string, nextImageUrl: string | null, closeAfter: boolean) => {
+    const name = nextName.trim()
+    if (!name) {
+      setError('Enter a display name.')
+      return
+    }
+    setSaving(true)
+    setError('')
+    try {
+      const saved = await persistAdminProfile(name, nextImageUrl)
+      setDraft(saved.name)
+      setImageUrl(saved.imageUrl)
+      onSave(saved)
+      if (closeAfter) onClose()
+    } catch {
+      setError('Could not save profile. Try again.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const handleImage = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     event.target.value = ''
     if (!file) return
 
-    if (!file.type.startsWith('image/')) {
-      setError('Please choose an image file.')
+    if (!isImageFile(file)) {
+      setError('Please choose an image file (JPG, PNG, WebP, etc.).')
+      return
+    }
+    if (file.size > MAX_FILE_BYTES) {
+      setError('Photo is too large. Please keep it under 8 MB.')
       return
     }
 
+    const nameForSave = draft.trim() || profile.name || HUB_NAME
+    const localPreview = URL.createObjectURL(file)
+    setImageUrl(localPreview)
     setUploading(true)
     setError('')
+
     void uploadChatFile(file)
-      .then((uploaded) => {
-        setImageUrl(uploaded.fileUrl)
+      .then(async (uploaded) => {
+        const saved = await persistAdminProfile(nameForSave, uploaded.fileUrl)
+        URL.revokeObjectURL(localPreview)
+        setDraft(saved.name)
+        setImageUrl(saved.imageUrl)
+        onSave(saved)
       })
       .catch((uploadError: unknown) => {
+        URL.revokeObjectURL(localPreview)
+        setImageUrl(profile.imageUrl)
         setError(
           uploadError instanceof Error
             ? uploadError.message
@@ -478,6 +538,16 @@ function AdminProfilePanel({
         setUploading(false)
       })
   }
+
+  const handleRemovePhoto = () => {
+    const nameForSave = draft.trim() || profile.name || HUB_NAME
+    setImageUrl(null)
+    setError('')
+    void saveProfile(nameForSave, null, false)
+  }
+
+  const initial = (draft.trim() || profile.name || '?').slice(0, 1).toUpperCase()
+  const busy = uploading || saving
 
   return (
     <div className="admin-profile-overlay" role="presentation" onClick={onClose}>
@@ -499,20 +569,40 @@ function AdminProfilePanel({
         </div>
 
         <div className="admin-profile-photo-wrap">
-          {imageUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={imageUrl} alt="" className="admin-profile-avatar admin-profile-avatar-photo" />
-          ) : (
-            <div className="admin-profile-avatar" aria-hidden="true">
-              {(draft.trim() || profile.name || '?').slice(0, 1).toUpperCase()}
-            </div>
-          )}
+          <input
+            ref={fileInputRef}
+            className="admin-profile-file-input"
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif,image/avif,image/*"
+            tabIndex={-1}
+            aria-hidden="true"
+            onChange={handleImage}
+          />
+          <button
+            type="button"
+            className={`admin-profile-avatar-button${busy ? ' is-busy' : ''}`}
+            aria-label={imageUrl ? 'Change profile photo' : 'Add profile photo from computer'}
+            disabled={busy}
+            onClick={openPhotoPicker}
+          >
+            {imageUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={imageUrl} alt="" className="admin-profile-avatar admin-profile-avatar-photo" />
+            ) : (
+              <span className="admin-profile-avatar" aria-hidden="true">
+                {initial}
+              </span>
+            )}
+            <span className="admin-profile-avatar-camera" aria-hidden="true">
+              <Camera size={16} />
+            </span>
+          </button>
           <div className="admin-profile-photo-actions">
             <button
               type="button"
               className="admin-profile-secondary"
-              disabled={uploading || saving}
-              onClick={() => fileInputRef.current?.click()}
+              disabled={busy}
+              onClick={openPhotoPicker}
             >
               <Camera size={16} />
               {uploading ? 'Uploading…' : imageUrl ? 'Change photo' : 'Add photo'}
@@ -521,49 +611,23 @@ function AdminProfilePanel({
               <button
                 type="button"
                 className="admin-profile-secondary"
-                disabled={uploading || saving}
-                onClick={() => setImageUrl(null)}
+                disabled={busy}
+                onClick={handleRemovePhoto}
               >
                 Remove
               </button>
             ) : null}
           </div>
-          <input
-            ref={fileInputRef}
-            className="file-input"
-            type="file"
-            accept="image/*"
-            onChange={handleImage}
-          />
+          <p className="admin-profile-photo-hint">
+            Pick a photo from your computer. It saves automatically and appears in every chat.
+          </p>
         </div>
 
         <form
           className="admin-profile-form"
           onSubmit={(event) => {
             event.preventDefault()
-            const next = draft.trim()
-            if (!next) {
-              setError('Enter a display name.')
-              return
-            }
-            setSaving(true)
-            setError('')
-            void fetch('/api/admin-profile', {
-              method: 'PUT',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ name: next, imageUrl }),
-            })
-              .then(async (response) => {
-                if (!response.ok) throw new Error('save failed')
-                const data = (await response.json()) as { profile: AdminProfile }
-                onSave(data.profile)
-              })
-              .catch(() => {
-                setError('Could not save profile. Try again.')
-              })
-              .finally(() => {
-                setSaving(false)
-              })
+            void saveProfile(draft, imageUrl?.startsWith('blob:') ? profile.imageUrl : imageUrl, true)
           }}
         >
           <label htmlFor="admin-display-name">Display name</label>
@@ -584,7 +648,7 @@ function AdminProfilePanel({
             <button type="button" className="admin-profile-secondary" onClick={onClose}>
               Cancel
             </button>
-            <button type="submit" disabled={saving || uploading}>
+            <button type="submit" disabled={busy}>
               {saving ? 'Saving…' : 'Save profile'}
             </button>
           </div>
@@ -984,13 +1048,13 @@ export default function AdminDashboard() {
   useEffect(() => {
     if (!authed) return
     let cancelled = false
-    void fetch('/api/admin-profile', { cache: 'no-store' })
+    void fetch(`/api/admin-profile?t=${Date.now()}`, { cache: 'no-store' })
       .then(async (response) => {
         if (!response.ok) throw new Error('Failed to load profile')
         const data = (await response.json()) as { profile: AdminProfile }
-        if (!cancelled && data.profile?.name) {
+        if (!cancelled && data.profile) {
           setHubProfile({
-            name: data.profile.name,
+            name: data.profile.name?.trim() || HUB_NAME,
             imageUrl: data.profile.imageUrl ?? null,
           })
         }
@@ -1152,7 +1216,6 @@ export default function AdminDashboard() {
           onClose={() => setShowProfile(false)}
           onSave={(profile) => {
             setHubProfile(profile)
-            setShowProfile(false)
           }}
         />
       ) : null}
@@ -1168,12 +1231,22 @@ export default function AdminDashboard() {
       >
         <aside className="admin-sidebar">
           <div className="admin-sidebar-header">
-            <div>
-              <h1>Customer chats</h1>
-              <p>
-                {conversations.length} customer{conversations.length === 1 ? '' : 's'}
-                <span className="admin-sidebar-as"> · {hubProfile.name}</span>
-              </p>
+            <div className="admin-sidebar-title-row">
+              <button
+                type="button"
+                className="admin-sidebar-profile"
+                aria-label="Admin profile"
+                onClick={() => setShowProfile(true)}
+              >
+                <Avatar name={hubProfile.name} imageUrl={hubProfile.imageUrl} small />
+              </button>
+              <div>
+                <h1>Customer chats</h1>
+                <p>
+                  {conversations.length} customer{conversations.length === 1 ? '' : 's'}
+                  <span className="admin-sidebar-as"> · {hubProfile.name}</span>
+                </p>
+              </div>
             </div>
             <div className="admin-sidebar-actions">
               <button

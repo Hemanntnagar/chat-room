@@ -105,15 +105,16 @@ async function postCustomerMessage(
 }
 
 function Header({ profile }: { profile: AdminProfile }) {
+  const displayName = profile.name.trim() || HUB_NAME
   return (
     <header className="chat-header">
       <div className="header-profile">
         <div className="avatar-wrap">
-          <Avatar name={profile.name} imageUrl={profile.imageUrl} />
+          <Avatar name={displayName} imageUrl={profile.imageUrl} />
           <span className="online-dot" />
         </div>
         <div>
-          <h1>{profile.name}</h1>
+          <h1>{displayName}</h1>
           <p>online</p>
         </div>
       </div>
@@ -542,7 +543,7 @@ export default function ChatInterface() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [identity, setIdentity] = useState<CustomerIdentity | null>(null)
   const [hubProfile, setHubProfile] = useState<AdminProfile>({
-    name: HUB_NAME,
+    name: '',
     imageUrl: null,
   })
   const [hydrated, setHydrated] = useState(false)
@@ -560,12 +561,14 @@ export default function ChatInterface() {
 
     const loadHubProfile = async () => {
       try {
-        const response = await fetch('/api/admin-profile', { cache: 'no-store' })
+        const response = await fetch(`/api/admin-profile?t=${Date.now()}`, {
+          cache: 'no-store',
+        })
         if (!response.ok) return
         const data = (await response.json()) as { profile: AdminProfile }
-        if (!cancelled && data.profile?.name) {
+        if (!cancelled && data.profile) {
           setHubProfile({
-            name: data.profile.name,
+            name: data.profile.name?.trim() || HUB_NAME,
             imageUrl: data.profile.imageUrl ?? null,
           })
         }
@@ -708,7 +711,7 @@ export default function ChatInterface() {
 
   return (
     <main className="app-shell">
-      <section className="chat-window" aria-label={`Chat with ${hubProfile.name}`}>
+      <section className="chat-window" aria-label={`Chat with ${hubProfile.name.trim() || HUB_NAME}`}>
         <Header profile={hubProfile} />
         {identity ? (
           <JoinedBar

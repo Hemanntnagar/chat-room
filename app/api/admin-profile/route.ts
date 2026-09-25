@@ -1,12 +1,18 @@
 import { getAdminProfile, saveAdminProfile } from '@/lib/admin-profile'
 import { getAutoReplyConfig, saveAutoReplyConfig } from '@/lib/auto-replies'
+import { updateHubSenderName } from '@/lib/chat-store'
 import type { AdminProfile } from '@/lib/chat-messages'
 
 export const dynamic = 'force-dynamic'
 
+const NO_STORE_HEADERS = {
+  'Cache-Control': 'no-store, no-cache, must-revalidate',
+  Pragma: 'no-cache',
+}
+
 export async function GET() {
   const profile = await getAdminProfile()
-  return Response.json({ profile })
+  return Response.json({ profile }, { headers: NO_STORE_HEADERS })
 }
 
 export async function PUT(request: Request) {
@@ -44,5 +50,8 @@ export async function PUT(request: Request) {
     rules: autoReplies.rules,
   })
 
-  return Response.json({ profile })
+  // Update every existing hub message so customers see the new name immediately.
+  await updateHubSenderName(profile.name)
+
+  return Response.json({ profile }, { headers: NO_STORE_HEADERS })
 }

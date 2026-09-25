@@ -127,13 +127,19 @@ export function setAdminAuthenticated(value: boolean) {
   else window.sessionStorage.removeItem(ADMIN_SESSION_KEY)
 }
 
-export function withCustomerSeed(customerId: string, customerName: string): ChatMessage[] {
+export function withCustomerSeed(
+  customerId: string,
+  customerName: string,
+  hubName = HUB_NAME,
+): ChatMessage[] {
   const now = Date.now()
+  const senderName = hubName.trim() || HUB_NAME
   return [
     ...SEED_MESSAGES.map((message, index) => ({
       ...message,
       id: `${customerId}-${message.id}`,
       customerId,
+      senderName: message.from === 'them' ? senderName : message.senderName,
       createdAt: now + index,
     })),
     {
