@@ -1,4 +1,3 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { getAdminProfile } from '@/lib/admin-profile'
 import {
@@ -8,6 +7,7 @@ import {
   messagePreview,
   withCustomerSeed,
 } from '@/lib/chat-messages'
+import { getDataDir, readTextFile, writeTextFile } from '@/lib/runtime-fs'
 
 type ChatStoreData = {
   conversations: Record<string, Conversation>
@@ -19,16 +19,19 @@ type GlobalChatStore = {
 }
 
 const globalStore = globalThis as typeof globalThis & GlobalChatStore
-const DATA_DIR = path.join(process.cwd(), 'data')
-const DATA_FILE = path.join(DATA_DIR, 'chats.json')
+
+function dataFile() {
+  return path.join(getDataDir(), 'chats.json')
+}
 
 function emptyStore(): ChatStoreData {
   return { conversations: {} }
 }
 
 async function readFromDisk(): Promise<ChatStoreData> {
+  const raw = await readTextFile(dataFile())
+  if (!raw) return emptyStore()
   try {
-    const raw = await readFile(DATA_FILE, 'utf8')
     const parsed = JSON.parse(raw) as ChatStoreData
     if (!parsed?.conversations || typeof parsed.conversations !== 'object') {
       return emptyStore()
@@ -48,8 +51,7 @@ async function ensureStore(): Promise<ChatStoreData> {
 
 async function persistStore(data: ChatStoreData) {
   const write = async () => {
-    await mkdir(DATA_DIR, { recursive: true })
-    await writeFile(DATA_FILE, JSON.stringify(data, null, 2), 'utf8')
+    await writeTextFile(dataFile(), JSON.stringify(data, null, 2))
   }
 
   globalStore.chatStoreWriteQueue = (globalStore.chatStoreWriteQueue ?? Promise.resolve())

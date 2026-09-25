@@ -1,4 +1,3 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { getAdminProfile } from '@/lib/admin-profile'
 import {
@@ -8,6 +7,7 @@ import {
   type AutoReplyRule,
   type CustomerQuickReplyId,
 } from '@/lib/chat-messages'
+import { getDataDir, readTextFile, writeTextFile } from '@/lib/runtime-fs'
 
 type GlobalAutoReplyStore = {
   autoReplyConfig?: AutoReplyConfig
@@ -15,8 +15,10 @@ type GlobalAutoReplyStore = {
 }
 
 const globalStore = globalThis as typeof globalThis & GlobalAutoReplyStore
-const DATA_DIR = path.join(process.cwd(), 'data')
-const DATA_FILE = path.join(DATA_DIR, 'auto-replies.json')
+
+function dataFile() {
+  return path.join(getDataDir(), 'auto-replies.json')
+}
 
 function defaultRules(): AutoReplyRule[] {
   return CUSTOMER_QUICK_REPLIES.map((item) => ({
@@ -47,10 +49,10 @@ function normalizeConfig(input?: Partial<AutoReplyConfig> | null): AutoReplyConf
 }
 
 async function readFromDisk(): Promise<AutoReplyConfig> {
+  const raw = await readTextFile(dataFile())
+  if (!raw) return normalizeConfig()
   try {
-    const raw = await readFile(DATA_FILE, 'utf8')
-    const parsed = JSON.parse(raw) as AutoReplyConfig
-    return normalizeConfig(parsed)
+    return normalizeConfig(JSON.parse(raw) as AutoReplyConfig)
   } catch {
     return normalizeConfig()
   }
@@ -65,8 +67,7 @@ async function ensureConfig(): Promise<AutoReplyConfig> {
 
 async function persistConfig(config: AutoReplyConfig) {
   const write = async () => {
-    await mkdir(DATA_DIR, { recursive: true })
-    await writeFile(DATA_FILE, JSON.stringify(config, null, 2), 'utf8')
+    await writeTextFile(dataFile(), JSON.stringify(config, null, 2))
   }
 
   globalStore.autoReplyWriteQueue = (globalStore.autoReplyWriteQueue ?? Promise.resolve())

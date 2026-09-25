@@ -1,6 +1,6 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { HUB_NAME, type AdminProfile } from '@/lib/chat-messages'
+import { getDataDir, readTextFile, writeTextFile } from '@/lib/runtime-fs'
 
 type GlobalAdminProfileStore = {
   adminProfileData?: AdminProfile
@@ -8,8 +8,10 @@ type GlobalAdminProfileStore = {
 }
 
 const globalStore = globalThis as typeof globalThis & GlobalAdminProfileStore
-const DATA_DIR = path.join(process.cwd(), 'data')
-const DATA_FILE = path.join(DATA_DIR, 'admin-profile.json')
+
+function dataFile() {
+  return path.join(getDataDir(), 'admin-profile.json')
+}
 
 function normalizeProfile(input?: Partial<AdminProfile> | null): AdminProfile {
   const name = input?.name?.trim() || HUB_NAME
@@ -22,10 +24,10 @@ function normalizeProfile(input?: Partial<AdminProfile> | null): AdminProfile {
 }
 
 async function readFromDisk(): Promise<AdminProfile> {
+  const raw = await readTextFile(dataFile())
+  if (!raw) return normalizeProfile()
   try {
-    const raw = await readFile(DATA_FILE, 'utf8')
-    const parsed = JSON.parse(raw) as AdminProfile
-    return normalizeProfile(parsed)
+    return normalizeProfile(JSON.parse(raw) as AdminProfile)
   } catch {
     return normalizeProfile()
   }
@@ -40,8 +42,7 @@ async function ensureProfile(): Promise<AdminProfile> {
 
 async function persistProfile(profile: AdminProfile) {
   const write = async () => {
-    await mkdir(DATA_DIR, { recursive: true })
-    await writeFile(DATA_FILE, JSON.stringify(profile, null, 2), 'utf8')
+    await writeTextFile(dataFile(), JSON.stringify(profile, null, 2))
   }
 
   globalStore.adminProfileWriteQueue = (globalStore.adminProfileWriteQueue ?? Promise.resolve())
