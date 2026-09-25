@@ -24,7 +24,10 @@ function uploadDir() {
 }
 
 function sanitizeBaseName(name: string) {
-  const base = path.basename(name).replace(/[^\w.\- ()[\]]+/g, '_')
+  const base = path
+    .basename(name)
+    .replace(/\s+/g, '-')
+    .replace(/[^\w.\-\[\]]+/g, '_')
   return base.slice(0, 120) || 'file'
 }
 
