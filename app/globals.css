@@ -1485,6 +1485,46 @@ button { cursor: pointer; }
   margin: 0;
 }
 
+.admin-auto-set-file {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.admin-auto-set-file-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #d1d7db;
+  border-radius: 8px;
+  background: #fff;
+  color: #111b21;
+  text-decoration: none;
+  font-size: 14px;
+  word-break: break-all;
+}
+
+.admin-auto-set-file-link:hover {
+  border-color: var(--wa-green);
+}
+
+.admin-auto-set-file-image-link {
+  display: block;
+  max-width: 100%;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #d1d7db;
+}
+
+.admin-auto-set-file-image {
+  display: block;
+  width: 100%;
+  max-height: 180px;
+  object-fit: cover;
+}
+
 .admin-sidebar-actions {
   display: flex;
   gap: 4px;
@@ -1503,6 +1543,69 @@ button { cursor: pointer; }
 
 .admin-sidebar-actions .icon-button:hover {
   background: rgba(255, 255, 255, 0.12);
+}
+
+.admin-sidebar-menu {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.admin-sidebar-menu-trigger {
+  color: #fff;
+  background: transparent;
+  border: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+}
+
+.admin-sidebar-menu-trigger:hover,
+.admin-sidebar-menu-trigger[aria-expanded='true'] {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.admin-sidebar-menu-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  left: auto;
+  z-index: 30;
+  min-width: 220px;
+  padding: 6px;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 8px 28px rgba(11, 20, 26, 0.22);
+  color: #111b21;
+}
+
+.admin-sidebar-menu-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #111b21;
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.admin-sidebar-menu-item:hover {
+  background: #f0f2f5;
+}
+
+.admin-sidebar-menu-item-danger {
+  color: #c62828;
+}
+
+.admin-sidebar-menu-item-danger:hover {
+  background: #fdecea;
 }
 
 .admin-customer-list {

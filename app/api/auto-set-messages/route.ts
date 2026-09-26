@@ -34,6 +34,24 @@ export async function PUT(request: Request) {
         : typeof payload.voiceAudioUrl === 'string'
           ? payload.voiceAudioUrl
           : undefined,
+    attachmentFileName:
+      payload.attachmentFileName === null
+        ? null
+        : typeof payload.attachmentFileName === 'string'
+          ? payload.attachmentFileName
+          : undefined,
+    attachmentFileUrl:
+      payload.attachmentFileUrl === null
+        ? null
+        : typeof payload.attachmentFileUrl === 'string'
+          ? payload.attachmentFileUrl
+          : undefined,
+    attachmentMimeType:
+      payload.attachmentMimeType === null
+        ? null
+        : typeof payload.attachmentMimeType === 'string'
+          ? payload.attachmentMimeType
+          : undefined,
   })
 
   return Response.json({ messages })

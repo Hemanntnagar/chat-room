@@ -82,6 +82,10 @@ export type AutoSetMessages = {
   voiceDurationSec: number
   /** Uploaded / stored audio URL for the greeting voice bubble. */
   voiceAudioUrl: string | null
+  /** Optional file attachment sent with the opening sequence. */
+  attachmentFileName: string | null
+  attachmentFileUrl: string | null
+  attachmentMimeType: string | null
 }
 
 export type AdminProfile = {
@@ -112,6 +116,9 @@ export const DEFAULT_AUTO_SET_MESSAGES: AutoSetMessages = {
   voiceText: 'Hello sir, Me apki kya help kr skti hu?',
   voiceDurationSec: 4,
   voiceAudioUrl: null,
+  attachmentFileName: null,
+  attachmentFileUrl: null,
+  attachmentMimeType: null,
 }
 
 export function buildSeedMessages(
@@ -128,8 +135,20 @@ export function buildSeedMessages(
     typeof autoSet.voiceAudioUrl === 'string' && autoSet.voiceAudioUrl.trim()
       ? autoSet.voiceAudioUrl.trim()
       : undefined
+  const attachmentFileUrl =
+    typeof autoSet.attachmentFileUrl === 'string' && autoSet.attachmentFileUrl.trim()
+      ? autoSet.attachmentFileUrl.trim()
+      : null
+  const attachmentFileName =
+    typeof autoSet.attachmentFileName === 'string' && autoSet.attachmentFileName.trim()
+      ? autoSet.attachmentFileName.trim()
+      : 'Attachment'
+  const attachmentMimeType =
+    typeof autoSet.attachmentMimeType === 'string' && autoSet.attachmentMimeType.trim()
+      ? autoSet.attachmentMimeType.trim()
+      : 'application/octet-stream'
 
-  return [
+  const messages: ChatMessage[] = [
     {
       id: 'links',
       from: 'them',
@@ -161,6 +180,23 @@ export function buildSeedMessages(
       ...(voiceAudioUrl ? { audioUrl: voiceAudioUrl } : {}),
     },
   ]
+
+  if (attachmentFileUrl) {
+    messages.push({
+      id: 'attachment',
+      from: 'them',
+      type: 'file',
+      senderName: HUB_NAME,
+      timestamp: '12:03',
+      createdAt: 3,
+      content: attachmentFileName,
+      fileName: attachmentFileName,
+      fileUrl: attachmentFileUrl,
+      mimeType: attachmentMimeType,
+    })
+  }
+
+  return messages
 }
 
 /** @deprecated Prefer buildSeedMessages — kept for callers that expect a static list. */

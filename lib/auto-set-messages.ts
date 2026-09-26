@@ -39,6 +39,22 @@ function normalizeConfig(input?: Partial<AutoSetMessages> | null): AutoSetMessag
     typeof input?.voiceAudioUrl === 'string' && input.voiceAudioUrl.trim()
       ? input.voiceAudioUrl.trim()
       : null
+  const attachmentFileUrl =
+    typeof input?.attachmentFileUrl === 'string' && input.attachmentFileUrl.trim()
+      ? input.attachmentFileUrl.trim()
+      : null
+  const attachmentFileName =
+    attachmentFileUrl &&
+    typeof input?.attachmentFileName === 'string' &&
+    input.attachmentFileName.trim()
+      ? input.attachmentFileName.trim()
+      : null
+  const attachmentMimeType =
+    attachmentFileUrl &&
+    typeof input?.attachmentMimeType === 'string' &&
+    input.attachmentMimeType.trim()
+      ? input.attachmentMimeType.trim()
+      : null
 
   return {
     linksText,
@@ -46,6 +62,9 @@ function normalizeConfig(input?: Partial<AutoSetMessages> | null): AutoSetMessag
     voiceText,
     voiceDurationSec,
     voiceAudioUrl,
+    attachmentFileName,
+    attachmentFileUrl,
+    attachmentMimeType,
   }
 }
 
@@ -110,6 +129,18 @@ export async function saveAutoSetMessages(
         : input.voiceDurationSec,
     voiceAudioUrl:
       input.voiceAudioUrl === undefined ? existing.voiceAudioUrl : input.voiceAudioUrl,
+    attachmentFileName:
+      input.attachmentFileName === undefined
+        ? existing.attachmentFileName
+        : input.attachmentFileName,
+    attachmentFileUrl:
+      input.attachmentFileUrl === undefined
+        ? existing.attachmentFileUrl
+        : input.attachmentFileUrl,
+    attachmentMimeType:
+      input.attachmentMimeType === undefined
+        ? existing.attachmentMimeType
+        : input.attachmentMimeType,
   })
   await persistConfig(next)
   return next

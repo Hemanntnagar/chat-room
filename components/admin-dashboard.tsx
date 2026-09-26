@@ -13,7 +13,9 @@ import {
   ArrowLeft,
   Bot,
   Camera,
+  FileText,
   LogOut,
+  Menu,
   MessageSquare,
   MessageSquareText,
   Mic,
@@ -78,6 +80,32 @@ async function blobToDataUrl(blob: Blob) {
     reader.onload = () => resolve(String(reader.result))
     reader.onerror = () => reject(reader.error)
     reader.readAsDataURL(blob)
+  })
+}
+
+function readAudioDurationSec(src: string): Promise<number> {
+  return new Promise((resolve) => {
+    const audio = new Audio()
+    audio.preload = 'metadata'
+    const finish = (seconds: number) => {
+      audio.removeAttribute('src')
+      audio.load()
+      resolve(Math.max(1, Math.min(120, Math.round(seconds) || 1)))
+    }
+    audio.onloadedmetadata = () => {
+      if (!Number.isFinite(audio.duration) || audio.duration === Infinity) {
+        // Some browsers need a seek to resolve duration for certain formats.
+        audio.currentTime = 1e101
+        audio.ontimeupdate = () => {
+          audio.ontimeupdate = null
+          finish(audio.duration)
+        }
+        return
+      }
+      finish(audio.duration)
+    }
+    audio.onerror = () => finish(1)
+    audio.src = src
   })
 }
 
@@ -1000,6 +1028,17 @@ function AdminAutoReplyPanel({
   )
 }
 
+function normalizeAutoSetDraft(messages?: Partial<AutoSetMessages> | null): AutoSetMessages {
+  return {
+    ...DEFAULT_AUTO_SET_MESSAGES,
+    ...messages,
+    voiceAudioUrl: messages?.voiceAudioUrl ?? null,
+    attachmentFileName: messages?.attachmentFileName ?? null,
+    attachmentFileUrl: messages?.attachmentFileUrl ?? null,
+    attachmentMimeType: messages?.attachmentMimeType ?? null,
+  }
+}
+
 function AdminAutoSetPanel({ onClose }: { onClose: () => void }) {
   const [draft, setDraft] = useState<AutoSetMessages>(DEFAULT_AUTO_SET_MESSAGES)
   const [loading, setLoading] = useState(true)
@@ -1010,12 +1049,16 @@ function AdminAutoSetPanel({ onClose }: { onClose: () => void }) {
   const [recordSeconds, setRecordSeconds] = useState(0)
   const [recordError, setRecordError] = useState('')
   const [uploadingVoice, setUploadingVoice] = useState(false)
+  const [attachmentError, setAttachmentError] = useState('')
+  const [uploadingAttachment, setUploadingAttachment] = useState(false)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const mediaStreamRef = useRef<MediaStream | null>(null)
   const chunksRef = useRef<BlobPart[]>([])
   const startedAtRef = useRef(0)
   const timerRef = useRef<number | null>(null)
   const shouldKeepRef = useRef(false)
+  const audioFileInputRef = useRef<HTMLInputElement>(null)
+  const attachmentFileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -1024,11 +1067,7 @@ function AdminAutoSetPanel({ onClose }: { onClose: () => void }) {
         if (!response.ok) throw new Error('Failed to load')
         const data = (await response.json()) as { messages: AutoSetMessages }
         if (!cancelled && data.messages) {
-          setDraft({
-            ...DEFAULT_AUTO_SET_MESSAGES,
-            ...data.messages,
-            voiceAudioUrl: data.messages.voiceAudioUrl ?? null,
-          })
+          setDraft(normalizeAutoSetDraft(data.messages))
           setError('')
         }
       })
@@ -1175,6 +1214,94 @@ function AdminAutoSetPanel({ onClose }: { onClose: () => void }) {
     setRecordError('')
   }
 
+  const applyUploadedAudio = async (file: File) => {
+    setUploadingVoice(true)
+    setRecordError('')
+    setSavedNote('')
+    try {
+      const uploaded = await uploadChatFile(file)
+      const durationSec = await readAudioDurationSec(uploaded.fileUrl)
+      setDraft((current) => ({
+        ...current,
+        voiceAudioUrl: uploaded.fileUrl,
+        voiceDurationSec: durationSec,
+      }))
+    } catch (uploadError: unknown) {
+      setRecordError(
+        uploadError instanceof Error
+          ? uploadError.message
+          : 'Could not upload that audio file. Try again.',
+      )
+    } finally {
+      setUploadingVoice(false)
+    }
+  }
+
+  const handleAudioFile = (event: ChangeEvent<HTMLInputElement>) => {
+    if (recording || uploadingVoice) return
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+
+    if (!file.type.startsWith('audio/') && !/\.(webm|mp3|m4a|wav|ogg|aac|mpeg)$/i.test(file.name)) {
+      setRecordError('Please choose an audio file (mp3, m4a, wav, ogg, webm).')
+      return
+    }
+
+    if (file.size > MAX_FILE_BYTES) {
+      setRecordError('Audio file is too large. Please keep it under 8 MB.')
+      return
+    }
+
+    void applyUploadedAudio(file)
+  }
+
+  const clearAttachment = () => {
+    setDraft((current) => ({
+      ...current,
+      attachmentFileName: null,
+      attachmentFileUrl: null,
+      attachmentMimeType: null,
+    }))
+    setAttachmentError('')
+    setSavedNote('')
+  }
+
+  const handleAttachmentFile = (event: ChangeEvent<HTMLInputElement>) => {
+    if (uploadingAttachment) return
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    setAttachmentError('')
+    if (!file) return
+
+    if (file.size > MAX_FILE_BYTES) {
+      setAttachmentError('File is too large. Please keep attachments under 8 MB.')
+      return
+    }
+
+    setUploadingAttachment(true)
+    setSavedNote('')
+    void uploadChatFile(file)
+      .then((uploaded) => {
+        setDraft((current) => ({
+          ...current,
+          attachmentFileName: uploaded.fileName,
+          attachmentFileUrl: uploaded.fileUrl,
+          attachmentMimeType: uploaded.mimeType,
+        }))
+      })
+      .catch((uploadError: unknown) => {
+        setAttachmentError(
+          uploadError instanceof Error
+            ? uploadError.message
+            : 'Could not upload that file. Try again.',
+        )
+      })
+      .finally(() => {
+        setUploadingAttachment(false)
+      })
+  }
+
   const save = async () => {
     setSaving(true)
     setError('')
@@ -1187,11 +1314,7 @@ function AdminAutoSetPanel({ onClose }: { onClose: () => void }) {
       })
       if (!response.ok) throw new Error('save failed')
       const data = (await response.json()) as { messages: AutoSetMessages }
-      setDraft({
-        ...DEFAULT_AUTO_SET_MESSAGES,
-        ...data.messages,
-        voiceAudioUrl: data.messages.voiceAudioUrl ?? null,
-      })
+      setDraft(normalizeAutoSetDraft(data.messages))
       setSavedNote('Auto-set messages saved. New chats will use them.')
     } catch {
       setError('Could not save auto-set messages. Try again.')
@@ -1302,7 +1425,7 @@ function AdminAutoSetPanel({ onClose }: { onClose: () => void }) {
                     />
                   ) : (
                     <p className="admin-auto-reply-status">
-                      No recording yet — tap record to capture the greeting.
+                      No audio yet — record or attach a pre-recorded file.
                     </p>
                   )}
                   <div className="admin-auto-set-recorder-buttons">
@@ -1315,6 +1438,15 @@ function AdminAutoSetPanel({ onClose }: { onClose: () => void }) {
                       <Mic size={16} />
                       {draft.voiceAudioUrl ? 'Re-record' : 'Record'}
                     </button>
+                    <button
+                      type="button"
+                      className="admin-auto-reply-add admin-auto-reply-add-secondary"
+                      disabled={uploadingVoice}
+                      onClick={() => audioFileInputRef.current?.click()}
+                    >
+                      <Paperclip size={16} />
+                      {draft.voiceAudioUrl ? 'Replace file' : 'Attach audio'}
+                    </button>
                     {draft.voiceAudioUrl ? (
                       <button
                         type="button"
@@ -1326,8 +1458,16 @@ function AdminAutoSetPanel({ onClose }: { onClose: () => void }) {
                       </button>
                     ) : null}
                   </div>
+                  <input
+                    ref={audioFileInputRef}
+                    type="file"
+                    accept="audio/*,.mp3,.m4a,.wav,.ogg,.webm,.aac"
+                    className="sr-only"
+                    tabIndex={-1}
+                    onChange={handleAudioFile}
+                  />
                   {uploadingVoice ? (
-                    <p className="admin-auto-reply-status">Uploading recording…</p>
+                    <p className="admin-auto-reply-status">Uploading audio…</p>
                   ) : null}
                 </div>
               )}
@@ -1343,6 +1483,78 @@ function AdminAutoSetPanel({ onClose }: { onClose: () => void }) {
                 />
               </label>
             </div>
+
+            <div className="admin-auto-reply-card">
+              <div className="admin-auto-reply-card-top">
+                <strong>File attachment</strong>
+              </div>
+              <div className="admin-auto-set-recorder-actions">
+                {draft.attachmentFileUrl ? (
+                  <div className="admin-auto-set-file">
+                    {draft.attachmentMimeType?.startsWith('image/') ? (
+                      <a
+                        href={draft.attachmentFileUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="admin-auto-set-file-image-link"
+                      >
+                        <img
+                          src={draft.attachmentFileUrl}
+                          alt={draft.attachmentFileName || 'Attachment'}
+                          className="admin-auto-set-file-image"
+                        />
+                      </a>
+                    ) : (
+                      <a
+                        href={draft.attachmentFileUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="admin-auto-set-file-link"
+                      >
+                        <FileText size={18} />
+                        <span>{draft.attachmentFileName || 'Attachment'}</span>
+                      </a>
+                    )}
+                  </div>
+                ) : (
+                  <p className="admin-auto-reply-status">
+                    No file yet — choose any file to send with new chats (max 8 MB).
+                  </p>
+                )}
+                <div className="admin-auto-set-recorder-buttons">
+                  <button
+                    type="button"
+                    className="admin-auto-reply-add admin-auto-reply-add-secondary"
+                    disabled={uploadingAttachment}
+                    onClick={() => attachmentFileInputRef.current?.click()}
+                  >
+                    <Paperclip size={16} />
+                    {draft.attachmentFileUrl ? 'Replace file' : 'Upload file'}
+                  </button>
+                  {draft.attachmentFileUrl ? (
+                    <button
+                      type="button"
+                      className="admin-auto-reply-remove"
+                      disabled={uploadingAttachment}
+                      onClick={clearAttachment}
+                    >
+                      Remove
+                    </button>
+                  ) : null}
+                </div>
+                <input
+                  ref={attachmentFileInputRef}
+                  type="file"
+                  className="sr-only"
+                  tabIndex={-1}
+                  onChange={handleAttachmentFile}
+                />
+                {uploadingAttachment ? (
+                  <p className="admin-auto-reply-status">Uploading file…</p>
+                ) : null}
+                {attachmentError ? <p className="admin-error">{attachmentError}</p> : null}
+              </div>
+            </div>
           </div>
         )}
 
@@ -1355,7 +1567,7 @@ function AdminAutoSetPanel({ onClose }: { onClose: () => void }) {
           </button>
           <button
             type="button"
-            disabled={loading || saving || recording || uploadingVoice}
+            disabled={loading || saving || recording || uploadingVoice || uploadingAttachment}
             onClick={() => void save()}
           >
             {saving ? 'Saving…' : 'Save auto-set messages'}
@@ -1383,6 +1595,8 @@ export default function AdminDashboard() {
   const [showProfile, setShowProfile] = useState(false)
   const [showAutoReplies, setShowAutoReplies] = useState(false)
   const [showAutoSet, setShowAutoSet] = useState(false)
+  const [showSidebarMenu, setShowSidebarMenu] = useState(false)
+  const sidebarMenuRef = useRef<HTMLDivElement>(null)
   const [conversations, setConversations] = useState<ConversationSummary[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [active, setActive] = useState<Conversation | null>(null)
@@ -1576,6 +1790,27 @@ export default function AdminDashboard() {
     swipeXRef.current = 0
     setSwipeX(0)
   }
+
+  useEffect(() => {
+    if (!showSidebarMenu) return
+
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null
+      if (target && sidebarMenuRef.current?.contains(target)) return
+      setShowSidebarMenu(false)
+    }
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setShowSidebarMenu(false)
+    }
+
+    window.addEventListener('pointerdown', onPointerDown)
+    window.addEventListener('keydown', onKeyDown)
+    return () => {
+      window.removeEventListener('pointerdown', onPointerDown)
+      window.removeEventListener('keydown', onKeyDown)
+    }
+  }, [showSidebarMenu])
 
   useEffect(() => {
     setAuthed(isAdminAuthenticated())
@@ -1815,52 +2050,82 @@ export default function AdminDashboard() {
                 </p>
               </div>
             </div>
-            <div className="admin-sidebar-actions">
+            <div className="admin-sidebar-menu" ref={sidebarMenuRef}>
               <button
                 type="button"
-                className="icon-button"
-                aria-label="Auto-set messages"
-                onClick={() => setShowAutoSet(true)}
+                className="icon-button admin-sidebar-menu-trigger"
+                aria-label="Open menu"
+                aria-haspopup="menu"
+                aria-expanded={showSidebarMenu}
+                onClick={() => setShowSidebarMenu((open) => !open)}
               >
-                <MessageSquareText size={18} />
+                <Menu size={20} />
               </button>
-              <button
-                type="button"
-                className="icon-button"
-                aria-label="Auto replies"
-                onClick={() => setShowAutoReplies(true)}
-              >
-                <Bot size={18} />
-              </button>
-              <button
-                type="button"
-                className="icon-button"
-                aria-label="Admin profile"
-                onClick={() => setShowProfile(true)}
-              >
-                <UserRound size={18} />
-              </button>
-              <button
-                type="button"
-                className="icon-button"
-                aria-label="Refresh"
-                onClick={() => {
-                  void loadList().catch(() => setError('Refresh failed.'))
-                }}
-              >
-                <RefreshCw size={18} />
-              </button>
-              <button
-                type="button"
-                className="icon-button"
-                aria-label="Sign out"
-                onClick={() => {
-                  setAdminAuthenticated(false)
-                  setAuthed(false)
-                }}
-              >
-                <LogOut size={18} />
-              </button>
+              {showSidebarMenu ? (
+                <div className="admin-sidebar-menu-panel" role="menu" aria-label="Admin menu">
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="admin-sidebar-menu-item"
+                    onClick={() => {
+                      setShowSidebarMenu(false)
+                      setShowProfile(true)
+                    }}
+                  >
+                    <UserRound size={18} />
+                    <span>Admin profile</span>
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="admin-sidebar-menu-item"
+                    onClick={() => {
+                      setShowSidebarMenu(false)
+                      setShowAutoSet(true)
+                    }}
+                  >
+                    <MessageSquareText size={18} />
+                    <span>Auto-set messages</span>
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="admin-sidebar-menu-item"
+                    onClick={() => {
+                      setShowSidebarMenu(false)
+                      setShowAutoReplies(true)
+                    }}
+                  >
+                    <Bot size={18} />
+                    <span>Auto replies</span>
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="admin-sidebar-menu-item"
+                    onClick={() => {
+                      setShowSidebarMenu(false)
+                      void loadList().catch(() => setError('Refresh failed.'))
+                    }}
+                  >
+                    <RefreshCw size={18} />
+                    <span>Refresh</span>
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="admin-sidebar-menu-item admin-sidebar-menu-item-danger"
+                    onClick={() => {
+                      setShowSidebarMenu(false)
+                      setAdminAuthenticated(false)
+                      setAuthed(false)
+                    }}
+                  >
+                    <LogOut size={18} />
+                    <span>Sign out</span>
+                  </button>
+                </div>
+              ) : null}
             </div>
           </div>
 
