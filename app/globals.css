@@ -290,7 +290,8 @@ button { cursor: pointer; }
   cursor: not-allowed;
 }
 
-.composer input:focus {
+.composer input:focus,
+.composer-textarea:focus {
   box-shadow: 0 0 0 2px rgba(0, 168, 132, .25);
 }
 
@@ -599,6 +600,28 @@ button { cursor: pointer; }
   font-size: 15px;
   box-shadow: 0 1px 1px rgba(11, 20, 26, .06);
 }
+form.composer {
+  align-items: flex-end;
+}
+.composer-textarea {
+  display: block;
+  min-width: 0;
+  flex: 1;
+  min-height: 42px;
+  max-height: 120px;
+  padding: 11px 14px;
+  border: 0;
+  border-radius: 8px;
+  background: #fff;
+  outline: none;
+  resize: none;
+  overflow-y: hidden;
+  font: inherit;
+  font-size: 15px;
+  line-height: 20px;
+  color: inherit;
+  box-shadow: 0 1px 1px rgba(11, 20, 26, .06);
+}
 .file-input {
   position: absolute;
   width: 1px;
@@ -798,6 +821,7 @@ button { cursor: pointer; }
   .quick-replies { padding: 8px 10px 0; }
   .composer { padding: 6px 8px 8px; }
   .composer input { height: 40px; font-size: 16px; }
+  .composer-textarea { min-height: 40px; padding: 10px 14px; font-size: 16px; }
   .recording-label { display: none; }
   .voice-bubble { min-width: 0; width: min(280px, calc(100vw - 72px)); }
 }

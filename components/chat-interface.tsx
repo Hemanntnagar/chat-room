@@ -18,6 +18,7 @@ import {
   UserRound,
   X,
 } from 'lucide-react'
+import { ComposerTextarea } from '@/components/composer-textarea'
 import { Avatar, MessageBubble } from '@/components/message-bubble'
 import {
   type AdminProfile,
@@ -508,11 +509,12 @@ function Composer({
           onChange={handleFile}
           disabled={!enabled}
         />
-        <input
+        <ComposerTextarea
           value={draft}
-          onChange={(event) => setDraft(event.target.value)}
+          onChange={setDraft}
+          onSubmit={sendMessage}
           placeholder={enabled ? 'Type a message' : 'Connecting…'}
-          aria-label="Message"
+          ariaLabel="Message"
           disabled={!enabled}
         />
         {hasText ? (

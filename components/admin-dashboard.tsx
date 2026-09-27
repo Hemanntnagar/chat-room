@@ -30,6 +30,7 @@ import {
   Users,
   X,
 } from 'lucide-react'
+import { ComposerTextarea } from '@/components/composer-textarea'
 import { MessageBubble, Avatar } from '@/components/message-bubble'
 import {
   type AdminProfile,
@@ -421,11 +422,12 @@ function AdminComposer({
           type="file"
           onChange={handleFile}
         />
-        <input
+        <ComposerTextarea
           value={draft}
-          onChange={(event) => setDraft(event.target.value)}
+          onChange={setDraft}
+          onSubmit={sendMessage}
           placeholder={`Reply as ${displayName}…`}
-          aria-label="Admin reply"
+          ariaLabel="Admin reply"
           autoFocus
         />
         {hasText ? (
