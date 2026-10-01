@@ -1660,15 +1660,34 @@ form.composer {
   font-size: 13px;
 }
 
+.admin-customer-row {
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid #f0f2f5;
+  background: #fff;
+}
+
+.admin-customer-row-active {
+  background: #e7f8f3;
+}
+
+.admin-customer-row:hover {
+  background: #f5f6f6;
+}
+
+.admin-customer-row-active:hover {
+  background: #e7f8f3;
+}
+
 .admin-customer-item {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px 14px;
+  padding: 12px 10px 12px 14px;
   border: 0;
-  border-bottom: 1px solid #f0f2f5;
-  background: #fff;
+  background: transparent;
   color: #111b21;
   text-align: left;
   cursor: pointer;
@@ -1907,4 +1926,216 @@ form.composer {
   .admin-chat-actions .save-chat-button span {
     display: none;
   }
+
+  .admin-staff-thread-assign span {
+    display: none;
+  }
+}
+
+.admin-staff-pill-select {
+  flex-shrink: 0;
+  align-self: center;
+  max-width: 112px;
+  margin: 0 10px 0 0;
+  padding: 6px 22px 6px 10px;
+  border: 1px solid #d1d7db;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.2;
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2354575a' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 6px center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.admin-staff-pill-select-compact {
+  max-width: 96px;
+  font-size: 11px;
+  padding: 5px 20px 5px 8px;
+}
+
+.admin-staff-pill-select-unassigned {
+  color: #667781;
+  background-color: #f0f2f5;
+  border-color: #e9edef;
+}
+
+.admin-staff-chat-checks {
+  margin-top: 0.35rem;
+}
+
+.admin-staff-chat-checks-title {
+  margin: 0 0 0.4rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #54656f;
+}
+
+.admin-staff-chat-checks ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 180px;
+  overflow: auto;
+  border: 1px solid rgba(11, 20, 26, 0.08);
+  border-radius: 8px;
+}
+
+.admin-staff-chat-checks li + li {
+  border-top: 1px solid rgba(11, 20, 26, 0.06);
+}
+
+.admin-staff-chat-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  padding: 0.45rem 0.55rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.admin-staff-chat-check input {
+  margin-top: 0.15rem;
+  flex-shrink: 0;
+}
+
+.admin-staff-chat-check-label {
+  min-width: 0;
+  line-height: 1.35;
+}
+
+.admin-staff-chat-other {
+  display: block;
+  font-size: 0.75rem;
+  font-style: normal;
+  color: #8696a0;
+}
+
+.admin-sidebar-footer-secondary {
+  margin-bottom: 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.admin-staff-panel {
+  max-width: 640px;
+}
+
+.admin-staff-create {
+  margin-bottom: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid rgba(11, 20, 26, 0.08);
+}
+
+.admin-staff-manage h3 {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+}
+
+.admin-staff-picker {
+  display: grid;
+  gap: 0.35rem;
+  margin-bottom: 0.85rem;
+  font-size: 0.85rem;
+}
+
+.admin-staff-picker select {
+  width: 100%;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid rgba(11, 20, 26, 0.15);
+  border-radius: 8px;
+  font-size: 0.95rem;
+}
+
+.admin-staff-chat-checks-managed {
+  margin-top: 0;
+}
+
+.admin-staff-delete-selected {
+  margin-top: 0.75rem;
+}
+
+.admin-staff-create h3 {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+}
+
+.admin-staff-create-grid {
+  display: grid;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.admin-staff-create-grid label {
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+}
+
+.admin-staff-create-grid input {
+  padding: 0.55rem 0.65rem;
+  border: 1px solid rgba(11, 20, 26, 0.15);
+  border-radius: 8px;
+}
+
+.admin-staff-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.admin-staff-row {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border: 1px solid rgba(11, 20, 26, 0.1);
+  border-radius: 10px;
+}
+
+.admin-staff-row-meta {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.admin-staff-row-meta code {
+  font-size: 0.85em;
+}
+
+.admin-staff-assign select,
+.admin-staff-thread-assign select {
+  min-width: 140px;
+  max-width: 100%;
+  padding: 0.35rem 0.5rem;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(0, 0, 0, 0.2);
+  color: inherit;
+  font-size: 0.85rem;
+}
+
+.admin-staff-thread-assign {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+}
+
+.staff-portal-shell {
+  min-height: 100dvh;
+}
+
+.staff-portal-sidebar-icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
 }

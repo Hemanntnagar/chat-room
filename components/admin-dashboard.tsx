@@ -7,6 +7,7 @@ import {
   useState,
   type ChangeEvent,
   type CSSProperties,
+  type SyntheticEvent,
   type TouchEvent as ReactTouchEvent,
 } from 'react'
 import {
@@ -1580,6 +1581,342 @@ function AdminAutoSetPanel({ onClose }: { onClose: () => void }) {
   )
 }
 
+type StaffRow = {
+  id: string
+  name: string
+  assignedCustomerId: string | null
+  createdAt: number
+}
+
+function staffPillStyle(staffId: string): CSSProperties {
+  let hash = 0
+  for (let index = 0; index < staffId.length; index += 1) {
+    hash = staffId.charCodeAt(index) + ((hash << 5) - hash)
+  }
+  const hue = Math.abs(hash) % 360
+  return {
+    backgroundColor: `hsl(${hue}, 52%, 90%)`,
+    color: `hsl(${hue}, 42%, 26%)`,
+    borderColor: `hsl(${hue}, 38%, 78%)`,
+  }
+}
+
+function stopRowClick(event: SyntheticEvent) {
+  event.stopPropagation()
+}
+
+function AdminStaffAssignSelect({
+  staffList,
+  value,
+  onChange,
+  compact,
+  ariaLabel,
+}: {
+  staffList: StaffRow[]
+  value: string
+  onChange: (staffId: string | null) => void
+  compact?: boolean
+  ariaLabel: string
+}) {
+  const assigned = value.trim()
+  const pillStyle = assigned ? staffPillStyle(assigned) : undefined
+
+  return (
+    <select
+      className={`admin-staff-pill-select${compact ? ' admin-staff-pill-select-compact' : ''}${assigned ? '' : ' admin-staff-pill-select-unassigned'}`}
+      style={pillStyle}
+      value={assigned}
+      aria-label={ariaLabel}
+      title="Change assigned staff"
+      onClick={stopRowClick}
+      onPointerDown={stopRowClick}
+      onChange={(event) => {
+        stopRowClick(event)
+        const next = event.target.value.trim() || null
+        onChange(next)
+      }}
+    >
+      <option value="">Unassigned</option>
+      {staffList.map((row) => (
+        <option key={row.id} value={row.id}>
+          {row.name}
+        </option>
+      ))}
+    </select>
+  )
+}
+
+function AdminStaffPanel({
+  conversations,
+  onClose,
+  onChanged,
+}: {
+  conversations: ConversationSummary[]
+  onClose: () => void
+  onChanged: () => void
+}) {
+  const [staff, setStaff] = useState<StaffRow[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [newId, setNewId] = useState('')
+  const [newName, setNewName] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [creating, setCreating] = useState(false)
+  const [togglingKey, setTogglingKey] = useState<string | null>(null)
+  const [selectedStaffId, setSelectedStaffId] = useState('')
+
+  const loadStaff = async () => {
+    const response = await fetch('/api/staff', { cache: 'no-store' })
+    if (!response.ok) throw new Error('Failed to load staff')
+    const data = (await response.json()) as { staff: StaffRow[] }
+    setStaff(data.staff)
+    return data.staff
+  }
+
+  useEffect(() => {
+    void loadStaff()
+      .catch(() => setError('Could not load staff list.'))
+      .finally(() => setLoading(false))
+  }, [])
+
+  useEffect(() => {
+    if (!selectedStaffId) return
+    if (!staff.some((member) => member.id === selectedStaffId)) {
+      setSelectedStaffId('')
+    }
+  }, [staff, selectedStaffId])
+
+  const selectedStaff = staff.find((member) => member.id === selectedStaffId) ?? null
+
+  const createStaffMember = async () => {
+    setCreating(true)
+    setError('')
+    try {
+      const response = await fetch('/api/staff', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: newId, name: newName, password: newPassword }),
+      })
+      const data = (await response.json()) as { staff?: StaffRow; error?: string }
+      if (!response.ok || !data.staff) {
+        setError(data.error ?? 'Could not create staff.')
+        return
+      }
+      setNewId('')
+      setNewName('')
+      setNewPassword('')
+      await loadStaff()
+      setSelectedStaffId(data.staff.id)
+      onChanged()
+    } catch {
+      setError('Could not create staff.')
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  const toggleStaffChat = async (staffId: string, customerId: string, assign: boolean) => {
+    const key = `${staffId}:${customerId}`
+    setTogglingKey(key)
+    setError('')
+    try {
+      const response = await fetch('/api/chats/assign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customerId,
+          staffId: assign ? staffId : null,
+        }),
+      })
+      const data = (await response.json()) as { error?: string }
+      if (!response.ok) {
+        setError(data.error ?? 'Could not update assignment.')
+        return
+      }
+      await loadStaff()
+      onChanged()
+    } catch {
+      setError('Could not update assignment.')
+    } finally {
+      setTogglingKey(null)
+    }
+  }
+
+  const removeStaff = async (staffId: string) => {
+    if (!window.confirm(`Remove staff "${staffId}"?`)) return
+    setError('')
+    try {
+      const response = await fetch(`/api/staff/${encodeURIComponent(staffId)}`, {
+        method: 'DELETE',
+      })
+      if (!response.ok) {
+        setError('Could not remove staff.')
+        return
+      }
+      await loadStaff()
+      setSelectedStaffId('')
+      onChanged()
+    } catch {
+      setError('Could not remove staff.')
+    }
+  }
+
+  return (
+    <div className="admin-profile-overlay" role="presentation" onClick={onClose}>
+      <section
+        className="admin-profile-panel admin-staff-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="admin-staff-title"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="admin-profile-header">
+          <div>
+            <h2 id="admin-staff-title">Staff accounts</h2>
+            <p>
+              Create a staff login, then pick who to manage and tick the chats they should handle.
+              Staff sign in at <strong>/staff</strong>.
+            </p>
+          </div>
+          <button type="button" className="icon-button" aria-label="Close staff panel" onClick={onClose}>
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="admin-staff-create">
+          <h3>Add staff</h3>
+          <div className="admin-staff-create-grid">
+            <label>
+              <span>Staff id (login)</span>
+              <input
+                type="text"
+                value={newId}
+                placeholder="e.g. agent01"
+                autoComplete="off"
+                onChange={(event) => setNewId(event.target.value)}
+              />
+            </label>
+            <label>
+              <span>Display name</span>
+              <input
+                type="text"
+                value={newName}
+                placeholder="Agent name"
+                onChange={(event) => setNewName(event.target.value)}
+              />
+            </label>
+            <label>
+              <span>Password</span>
+              <input
+                type="password"
+                value={newPassword}
+                placeholder="Min 4 characters"
+                autoComplete="new-password"
+                onChange={(event) => setNewPassword(event.target.value)}
+              />
+            </label>
+          </div>
+          <button type="button" disabled={creating} onClick={() => void createStaffMember()}>
+            {creating ? 'Creating…' : 'Create staff'}
+          </button>
+        </div>
+
+        <div className="admin-staff-manage">
+          <h3>Manage chats</h3>
+          {loading ? (
+            <p className="admin-auto-reply-status">Loading staff…</p>
+          ) : staff.length === 0 ? (
+            <p className="admin-auto-reply-status">Create a staff account above to get started.</p>
+          ) : (
+            <>
+              <label className="admin-staff-picker">
+                <span>Select staff</span>
+                <select
+                  value={selectedStaffId}
+                  onChange={(event) => setSelectedStaffId(event.target.value)}
+                >
+                  <option value="">Choose staff…</option>
+                  {staff.map((member) => (
+                    <option key={member.id} value={member.id}>
+                      {member.name} ({member.id})
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              {!selectedStaff ? (
+                <p className="admin-auto-reply-status">
+                  Pick a staff member to assign or unassign customer chats.
+                </p>
+              ) : (
+                <div className="admin-staff-chat-checks admin-staff-chat-checks-managed">
+                  <p className="admin-staff-chat-checks-title">
+                    Chats for <strong>{selectedStaff.name}</strong>
+                  </p>
+                  {conversations.length === 0 ? (
+                    <span className="admin-auto-reply-status">No customer chats yet.</span>
+                  ) : (
+                    <ul>
+                      {conversations.map((item) => {
+                        const checked = item.assignedStaffId === selectedStaff.id
+                        const ownedByOther =
+                          Boolean(item.assignedStaffId) &&
+                          item.assignedStaffId !== selectedStaff.id
+                        const toggleKey = `${selectedStaff.id}:${item.customerId}`
+                        return (
+                          <li key={item.customerId}>
+                            <label className="admin-staff-chat-check">
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                disabled={togglingKey === toggleKey}
+                                onChange={(event) => {
+                                  void toggleStaffChat(
+                                    selectedStaff.id,
+                                    item.customerId,
+                                    event.target.checked,
+                                  )
+                                }}
+                              />
+                              <span className="admin-staff-chat-check-label">
+                                {item.customerName || 'Guest'}
+                                {ownedByOther ? (
+                                  <em className="admin-staff-chat-other">
+                                    · assigned to another staff
+                                  </em>
+                                ) : null}
+                              </span>
+                            </label>
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  )}
+                  <button
+                    type="button"
+                    className="admin-auto-reply-remove admin-staff-delete-selected"
+                    onClick={() => void removeStaff(selectedStaff.id)}
+                  >
+                    Remove this staff account
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {error ? <p className="admin-error">{error}</p> : null}
+
+        <div className="admin-profile-actions">
+          <button type="button" className="admin-profile-secondary" onClick={onClose}>
+            Close
+          </button>
+        </div>
+      </section>
+    </div>
+  )
+}
+
 const MOBILE_INBOX_MQ = '(max-width: 860px)'
 const SWIPE_BACK_RATIO = 0.28
 const SWIPE_BACK_PX = 72
@@ -1597,6 +1934,8 @@ export default function AdminDashboard() {
   const [showProfile, setShowProfile] = useState(false)
   const [showAutoReplies, setShowAutoReplies] = useState(false)
   const [showAutoSet, setShowAutoSet] = useState(false)
+  const [showStaff, setShowStaff] = useState(false)
+  const [staffList, setStaffList] = useState<StaffRow[]>([])
   const [showSidebarMenu, setShowSidebarMenu] = useState(false)
   const sidebarMenuRef = useRef<HTMLDivElement>(null)
   const [conversations, setConversations] = useState<ConversationSummary[]>([])
@@ -1689,6 +2028,30 @@ export default function AdminDashboard() {
     const data = (await response.json()) as { conversations: ConversationSummary[] }
     setConversations(data.conversations)
     return data.conversations
+  }
+
+  const loadStaffList = async () => {
+    const response = await fetch('/api/staff', { cache: 'no-store' })
+    if (!response.ok) throw new Error('Failed to load staff')
+    const data = (await response.json()) as { staff: StaffRow[] }
+    setStaffList(data.staff)
+    return data.staff
+  }
+
+  const assignStaffForCustomer = async (customerId: string, staffId: string | null) => {
+    const response = await fetch('/api/chats/assign', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ customerId, staffId }),
+    })
+    if (!response.ok) {
+      const data = (await response.json()) as { error?: string }
+      throw new Error(data.error ?? 'Assignment failed')
+    }
+    await Promise.all([loadStaffList(), loadList()])
+    if (selectedIdRef.current === customerId) {
+      await loadConversation(customerId)
+    }
   }
 
   const loadConversation = async (customerId: string, markRead = false) => {
@@ -1839,6 +2202,13 @@ export default function AdminDashboard() {
     return () => {
       cancelled = true
     }
+  }, [authed])
+
+  useEffect(() => {
+    if (!authed) return
+    void loadStaffList().catch(() => {
+      // staff API optional during first load
+    })
   }, [authed])
 
   useEffect(() => {
@@ -2029,6 +2399,16 @@ export default function AdminDashboard() {
         />
       ) : null}
       {showAutoSet ? <AdminAutoSetPanel onClose={() => setShowAutoSet(false)} /> : null}
+      {showStaff ? (
+        <AdminStaffPanel
+          conversations={conversations}
+          onClose={() => setShowStaff(false)}
+          onChanged={() => {
+            void loadStaffList().catch(() => setError('Could not refresh staff.'))
+            void loadList().catch(() => setError('Refresh failed.'))
+          }}
+        />
+      ) : null}
       <section
         className={`admin-inbox ${isMobile ? (mobileShowingThread ? 'admin-inbox-mobile-thread' : 'admin-inbox-mobile-list') : ''}`}
         aria-label="Admin customer inbox"
@@ -2107,6 +2487,18 @@ export default function AdminDashboard() {
                     className="admin-sidebar-menu-item"
                     onClick={() => {
                       setShowSidebarMenu(false)
+                      setShowStaff(true)
+                    }}
+                  >
+                    <Users size={18} />
+                    <span>Staff accounts</span>
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="admin-sidebar-menu-item"
+                    onClick={() => {
+                      setShowSidebarMenu(false)
                       void loadList().catch(() => setError('Refresh failed.'))
                     }}
                   >
@@ -2142,34 +2534,53 @@ export default function AdminDashboard() {
               conversations.map((item) => {
                 const selected = item.customerId === selectedId
                 return (
-                  <button
+                  <div
                     key={item.customerId}
-                    type="button"
                     role="listitem"
-                    className={`admin-customer-item ${selected ? 'admin-customer-item-active' : ''}`}
-                    onClick={() => openConversation(item.customerId)}
+                    className={`admin-customer-row ${selected ? 'admin-customer-row-active' : ''}`}
                   >
-                    <div className="admin-customer-avatar" aria-hidden="true">
-                      {(item.customerName || '?').slice(0, 1).toUpperCase()}
-                    </div>
-                    <div className="admin-customer-meta">
-                      <div className="admin-customer-top">
-                        <strong>{item.customerName || 'Guest'}</strong>
-                        <time>{formatRelative(item.updatedAt)}</time>
+                    <button
+                      type="button"
+                      className={`admin-customer-item ${selected ? 'admin-customer-item-active' : ''}`}
+                      onClick={() => openConversation(item.customerId)}
+                    >
+                      <div className="admin-customer-avatar" aria-hidden="true">
+                        {(item.customerName || '?').slice(0, 1).toUpperCase()}
                       </div>
-                      <div className="admin-customer-bottom">
-                        <span>{item.lastMessage}</span>
-                        {item.unreadByAdmin > 0 ? (
-                          <em className="admin-unread">{item.unreadByAdmin}</em>
-                        ) : null}
+                      <div className="admin-customer-meta">
+                        <div className="admin-customer-top">
+                          <strong>{item.customerName || 'Guest'}</strong>
+                          <time>{formatRelative(item.updatedAt)}</time>
+                        </div>
+                        <div className="admin-customer-bottom">
+                          <span>{item.lastMessage}</span>
+                          {item.unreadByAdmin > 0 ? (
+                            <em className="admin-unread">{item.unreadByAdmin}</em>
+                          ) : null}
+                        </div>
                       </div>
-                    </div>
-                  </button>
+                    </button>
+                    <AdminStaffAssignSelect
+                      staffList={staffList}
+                      value={item.assignedStaffId ?? ''}
+                      compact
+                      ariaLabel={`Staff for ${item.customerName || 'Guest'}`}
+                      onChange={(staffId) => {
+                        void assignStaffForCustomer(item.customerId, staffId).catch(() => {
+                          setError('Could not assign staff to this chat.')
+                        })
+                      }}
+                    />
+                  </div>
                 )
               })
             )}
           </div>
 
+          <Link href="/staff" className="admin-sidebar-footer admin-sidebar-footer-secondary">
+            <Users size={16} />
+            Staff portal
+          </Link>
           <Link href="/" className="admin-sidebar-footer">
             <ArrowLeft size={16} />
             Open visitor chat
@@ -2221,6 +2632,16 @@ export default function AdminDashboard() {
                   </div>
                 </div>
                 <div className="header-actions admin-chat-actions">
+                  <AdminStaffAssignSelect
+                    staffList={staffList}
+                    value={active.assignedStaffId ?? ''}
+                    ariaLabel={`Staff for ${active.customerName}`}
+                    onChange={(staffId) => {
+                      void assignStaffForCustomer(active.customerId, staffId).catch(() => {
+                        setError('Could not assign staff to this chat.')
+                      })
+                    }}
+                  />
                   <button
                     type="button"
                     className="save-chat-button"

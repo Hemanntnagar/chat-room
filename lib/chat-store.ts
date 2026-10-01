@@ -91,12 +91,23 @@ function toSummary(conversation: Conversation): ConversationSummary {
     messageCount: conversation.messages.length,
     lastMessage: last ? messagePreview(last) : 'No messages yet',
     unreadByAdmin: conversation.unreadByAdmin,
+    assignedStaffId: conversation.assignedStaffId ?? null,
   }
 }
 
 export async function listConversations(): Promise<ConversationSummary[]> {
   const store = await loadStore()
   return Object.values(store.conversations)
+    .map(toSummary)
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+}
+
+export async function listConversationsForStaff(staffId: string): Promise<ConversationSummary[]> {
+  const id = staffId.trim().toLowerCase()
+  if (!id) return []
+  const store = await loadStore()
+  return Object.values(store.conversations)
+    .filter((conversation) => conversation.assignedStaffId === id)
     .map(toSummary)
     .sort((a, b) => b.updatedAt - a.updatedAt)
 }
@@ -141,7 +152,11 @@ export async function ensureConversation(
   }
   store.conversations[customerId] = conversation
   await persistStore(store)
-  return conversation
+
+  const { autoAssignConversationIfUnassigned } = await import('@/lib/staff-auto-assign')
+  await autoAssignConversationIfUnassigned(customerId)
+  const afterAssign = await loadStore()
+  return afterAssign.conversations[customerId] ?? conversation
 }
 
 export async function appendConversationMessage(
@@ -169,6 +184,12 @@ export async function appendConversationMessage(
     current.unreadByAdmin = 0
   } else if (nextMessage.from === 'me') {
     current.unreadByAdmin += 1
+  }
+
+  if (!current.assignedStaffId && !options?.fromAdmin && nextMessage.from === 'me') {
+    const { autoAssignConversationIfUnassigned } = await import('@/lib/staff-auto-assign')
+    const staffId = await autoAssignConversationIfUnassigned(customerId)
+    if (staffId) current.assignedStaffId = staffId
   }
 
   store.conversations[customerId] = current
@@ -222,6 +243,19 @@ export async function deleteConversation(customerId: string): Promise<boolean> {
 }
 
 /** Keep stored hub message labels in sync when the admin display name changes. */
+export async function setConversationAssignedStaff(
+  customerId: string,
+  staffId: string | null,
+): Promise<Conversation | null> {
+  const store = await loadStore()
+  const conversation = store.conversations[customerId]
+  if (!conversation) return null
+  conversation.assignedStaffId = staffId
+  conversation.updatedAt = Date.now()
+  await persistStore(store)
+  return conversation
+}
+
 export async function updateHubSenderName(senderName: string): Promise<void> {
   const nextName = senderName.trim()
   if (!nextName) return

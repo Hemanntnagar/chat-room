@@ -28,6 +28,7 @@ export type ConversationSummary = {
   messageCount: number
   lastMessage: string
   unreadByAdmin: number
+  assignedStaffId?: string | null
 }
 
 export type Conversation = {
@@ -36,11 +37,13 @@ export type Conversation = {
   createdAt: number
   updatedAt: number
   unreadByAdmin: number
+  assignedStaffId?: string | null
   messages: ChatMessage[]
 }
 
 export const HUB_NAME = 'Profit Online Hub'
 export const ADMIN_SESSION_KEY = 'chat-room:admin'
+export const STAFF_ID_SESSION_KEY = 'chat-room:staff-id'
 /** Demo admin password — change for production use */
 export const ADMIN_PASSWORD = 'admin'
 
@@ -224,6 +227,21 @@ export function setAdminAuthenticated(value: boolean) {
   if (typeof window === 'undefined') return
   if (value) window.sessionStorage.setItem(ADMIN_SESSION_KEY, '1')
   else window.sessionStorage.removeItem(ADMIN_SESSION_KEY)
+}
+
+export function getStaffSessionId(): string | null {
+  if (typeof window === 'undefined') return null
+  const id = window.sessionStorage.getItem(STAFF_ID_SESSION_KEY)?.trim()
+  return id || null
+}
+
+export function setStaffSession(staffId: string | null) {
+  if (typeof window === 'undefined') return
+  if (staffId?.trim()) {
+    window.sessionStorage.setItem(STAFF_ID_SESSION_KEY, staffId.trim().toLowerCase())
+  } else {
+    window.sessionStorage.removeItem(STAFF_ID_SESSION_KEY)
+  }
 }
 
 export function withCustomerSeed(
